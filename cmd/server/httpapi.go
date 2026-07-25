@@ -9,7 +9,8 @@ import (
 
 	"wacalls/internal/voip/core"
 
-	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func (s *server) routes() http.Handler {
@@ -17,6 +18,7 @@ func (s *server) routes() http.Handler {
 
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
+	mux.HandleFunc("PATCH /api/sessions/{sid}", s.handleSessionRename)
 	mux.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)
 	mux.HandleFunc("POST /api/sessions/{sid}/logout", s.handleSessionLogout)
 	mux.HandleFunc("POST /api/sessions/{sid}/pair", s.handleSessionPair)
@@ -26,6 +28,16 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/reject", s.handleReject)
 	mux.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}", s.handleEndCall)
 	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
+
+	// Auth routes
+	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+
+	// User management routes
+	mux.HandleFunc("GET /api/users", s.handleUserList)
+	mux.HandleFunc("POST /api/users", s.handleUserCreate)
+	mux.HandleFunc("PATCH /api/users/{id}", s.handleUserUpdate)
+	mux.HandleFunc("DELETE /api/users/{id}", s.handleUserDelete)
 
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
@@ -40,8 +52,8 @@ func (s *server) routes() http.Handler {
 func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Client-Id")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Client-Id, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -95,6 +107,23 @@ func (s *server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id})
+}
+
+func (s *server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
+		return
+	}
+	if err := s.sessions.Rename(r.PathValue("sid"), name); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +209,26 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "max concurrent calls"})
 		return
 	}
-	peer := types.NewJID(normalizePhone(body.Phone), types.DefaultUserServer)
+	phone := normalizePhone(body.Phone)
+	resp, err := sess.client.IsOnWhatsApp(r.Context(), []string{phone})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check whatsapp user: " + err.Error()})
+		return
+	}
+	if len(resp) == 0 || !resp[0].IsIn {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "number is not registered on WhatsApp"})
+		return
+	}
+	peer := resp[0].JID
+	name := ""
+	if resp[0].VerifiedName != nil && resp[0].VerifiedName.Details != nil {
+		name = resp[0].VerifiedName.Details.GetVerifiedName()
+	}
+	pictureURL := ""
+	if pic, err := sess.client.GetProfilePictureInfo(r.Context(), peer, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
+		pictureURL = pic.URL
+	}
+	s.log.Info("resolved target JID for call", "input", body.Phone, "resolved_jid", peer.String(), "name", name, "picture_url", pictureURL)
 
 	callID, err := sess.startOutgoing(r.Context(), peer, false)
 	if err != nil {
@@ -189,9 +237,9 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 	}
 	s.broker.upsertCall(CallRecord{
 		SessionID: sess.id, CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.String(),
-		StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
+		Name: name, PictureURL: pictureURL, StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": callID}})
+	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": callID, "peer": peer.String(), "name": name, "pictureUrl": pictureURL}})
 }
 
 func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request) {
@@ -278,4 +326,152 @@ func normalizePhone(p string) string {
 		}
 	}
 	return b.String()
+}
+
+func (s *server) authUser(r *http.Request) *User {
+	authHeader := r.Header.Get("Authorization")
+	tok := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tok = strings.TrimPrefix(authHeader, "Bearer ")
+	} else {
+		tok = r.Header.Get("X-Client-Id")
+	}
+	if tok == "" {
+		return nil
+	}
+	userID := s.users.validateToken(tok)
+	if userID == "" {
+		return nil
+	}
+	u, _ := s.users.getUserByID(r.Context(), userID)
+	return u
+}
+
+func (s *server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	u, err := s.users.getUserByEmail(r.Context(), body.Email)
+	if err != nil || u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "E-mail ou senha incorretos."})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "E-mail ou senha incorretos."})
+		return
+	}
+
+	token := s.users.createToken(u.ID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user":  u,
+	})
+}
+
+func (s *server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "não autenticado"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": u})
+}
+
+func (s *server) handleUserList(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil || u.Role != RoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Acesso restrito a administradores."})
+		return
+	}
+
+	users, err := s.users.listUsers(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil || u.Role != RoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Acesso restrito a administradores."})
+		return
+	}
+
+	var body struct {
+		Name     string   `json:"name"`
+		Email    string   `json:"email"`
+		Password string   `json:"password"`
+		Role     UserRole `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	if body.Role != RoleAdmin && body.Role != RoleUser {
+		body.Role = RoleUser
+	}
+
+	newUser, err := s.users.createUser(r.Context(), body.Name, body.Email, body.Password, body.Role)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"user": newUser})
+}
+
+func (s *server) handleUserUpdate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil || u.Role != RoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Acesso restrito a administradores."})
+		return
+	}
+
+	targetID := r.PathValue("id")
+	var body struct {
+		Name     string   `json:"name"`
+		Email    string   `json:"email"`
+		Password string   `json:"password"`
+		Role     UserRole `json:"role"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	updatedUser, err := s.users.updateUser(r.Context(), targetID, body.Name, body.Email, body.Password, body.Role)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"user": updatedUser})
+}
+
+func (s *server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil || u.Role != RoleAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Acesso restrito a administradores."})
+		return
+	}
+
+	targetID := r.PathValue("id")
+	if u.ID == targetID {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Você não pode excluir sua própria conta de administrador."})
+		return
+	}
+
+	if err := s.users.deleteUser(r.Context(), targetID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

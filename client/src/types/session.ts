@@ -4,6 +4,10 @@ export type SessionInfo = {
   id: string;
   name: string;
   jid: string;
+  pushName?: string;
+  pictureUrl?: string;
+  statusText?: string;
+  phone?: string;
   state: SessionState;
   paired: boolean;
 };

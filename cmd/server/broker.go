@@ -20,8 +20,10 @@ type CallRecord struct {
 	SessionID string     `json:"sessionId"`
 	CallID    string     `json:"callId"`
 	Owner     *string    `json:"owner"`
-	Direction string     `json:"direction"`
-	Peer      string     `json:"peer"`
+	Direction  string     `json:"direction"`
+	Peer       string     `json:"peer"`
+	Name       string     `json:"name,omitempty"`
+	PictureURL string     `json:"pictureUrl,omitempty"`
 	StartedAt int64      `json:"startedAt"`
 	Status    CallStatus `json:"status"`
 	EndedAt   *int64     `json:"endedAt,omitempty"`
@@ -35,11 +37,15 @@ type AuthSnapshot struct {
 }
 
 type SessionInfo struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	JID    string `json:"jid"`
-	State  string `json:"state"`
-	Paired bool   `json:"paired"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	JID        string `json:"jid"`
+	Phone      string `json:"phone,omitempty"`
+	PushName   string `json:"pushName,omitempty"`
+	PictureURL string `json:"pictureUrl,omitempty"`
+	StatusText string `json:"statusText,omitempty"`
+	State      string `json:"state"`
+	Paired     bool   `json:"paired"`
 }
 
 type subscriber struct {

@@ -137,6 +137,21 @@ func (m *SessionManager) Create(name string) (string, error) {
 	return id, nil
 }
 
+func (m *SessionManager) Rename(id, name string) error {
+	s, ok := m.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	if err := m.store.rename(m.appCtx, id, name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.name = name
+	s.mu.Unlock()
+	m.broker.emitSessionList(m.infos())
+	return nil
+}
+
 func (m *SessionManager) Delete(ctx context.Context, id string) error {
 	s, ok := m.Get(id)
 	if !ok {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,8 +30,11 @@ type Session struct {
 	client *whatsmeow.Client
 	reg    *callRegistry
 
-	mu   sync.Mutex
-	auth AuthSnapshot
+	mu         sync.Mutex
+	auth       AuthSnapshot
+	pushName   string
+	pictureURL string
+	statusText string
 }
 
 func newSession(mgr *SessionManager, id, name string, client *whatsmeow.Client) *Session {
@@ -80,6 +84,11 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		if existing != nil {
 			rec.Owner = existing.Owner
 			rec.StartedAt = existing.StartedAt
+			rec.Name = existing.Name
+			rec.PictureURL = existing.PictureURL
+			if strings.HasSuffix(rec.Peer, "@lid") && existing.Peer != "" && !strings.HasSuffix(existing.Peer, "@lid") {
+				rec.Peer = existing.Peer
+			}
 		}
 		s.mgr.broker.upsertCall(rec)
 	}
@@ -148,6 +157,7 @@ func (s *Session) handleEvent(rawEvt any) {
 	case *events.Connected:
 		if id := s.client.Store.ID; id != nil {
 			_ = s.mgr.store.setJID(s.mgr.appCtx, s.id, id.String())
+			go s.fetchProfileDetails(ctx)
 		}
 		s.setAuth(AuthSnapshot{State: "open", Paired: true})
 	case *events.LoggedOut:
@@ -217,15 +227,51 @@ func (s *Session) setAuth(a AuthSnapshot) {
 	s.mgr.broker.emitSessionList(s.mgr.infos())
 }
 
+func (s *Session) fetchProfileDetails(ctx context.Context) {
+	if s.client.Store.ID == nil {
+		return
+	}
+	ownJID := s.client.Store.ID.ToNonAD()
+	pushName := s.client.Store.PushName
+
+	pictureURL := ""
+	if pic, err := s.client.GetProfilePictureInfo(ctx, ownJID, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
+		pictureURL = pic.URL
+	}
+
+	statusText := ""
+	if info, err := s.client.GetUserInfo(ctx, []types.JID{ownJID}); err == nil && info != nil {
+		if uInfo, ok := info[ownJID]; ok {
+			statusText = uInfo.Status
+		}
+	}
+	s.mu.Lock()
+	s.pushName = pushName
+	s.pictureURL = pictureURL
+	s.statusText = statusText
+	s.mu.Unlock()
+
+	s.mgr.broker.emitSessionList(s.mgr.infos())
+}
+
 func (s *Session) info() SessionInfo {
 	s.mu.Lock()
 	a := s.auth
+	pushName := s.pushName
+	pictureURL := s.pictureURL
+	statusText := s.statusText
 	s.mu.Unlock()
 	jid := ""
+	phone := ""
 	if id := s.client.Store.ID; id != nil {
 		jid = id.String()
+		phone = id.User
 	}
-	return SessionInfo{ID: s.id, Name: s.name, JID: jid, State: a.State, Paired: a.Paired || jid != ""}
+	return SessionInfo{
+		ID: s.id, Name: s.name, JID: jid, Phone: phone,
+		PushName: pushName, PictureURL: pictureURL, StatusText: statusText,
+		State: a.State, Paired: a.Paired || jid != "",
+	}
 }
 
 func (s *Session) setBridge(callID string, b *Bridge) {

@@ -13,6 +13,7 @@ import (
 type server struct {
 	broker    *Broker
 	sessions  *SessionManager
+	users     *userStore
 	log       *slog.Logger
 	staticDir string
 }
@@ -50,5 +51,10 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls)
 	broker.SnapshotFn = mgr.snapshotEvents
 
-	return &server{broker: broker, sessions: mgr, log: log, staticDir: staticDir}, nil
+	userStore, err := newUserStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	return &server{broker: broker, sessions: mgr, users: userStore, log: log, staticDir: staticDir}, nil
 }

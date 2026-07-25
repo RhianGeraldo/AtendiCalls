@@ -22,3 +22,12 @@ const postVoid = async (path: string): Promise<void> => {
 export const logoutSession = (id: string) => postVoid(`/api/sessions/${id}/logout`);
 
 export const pairSession = (id: string) => postVoid(`/api/sessions/${id}/pair`);
+
+export const renameSession = async (id: string, name: string): Promise<void> => {
+  const r = await fetch(`/api/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "X-Client-Id": getClientId(), "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!r.ok) throw new Error(`Falha ao renomear sessão: ${r.status}`);
+};

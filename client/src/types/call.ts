@@ -6,7 +6,10 @@ export type CallSummary = {
   owner: string | null;
   direction: "outbound" | "inbound";
   peer: string;
+  name?: string;
+  pictureUrl?: string;
   startedAt: number;
+  connectedAt?: number;
   status: CallStatus;
 };
 

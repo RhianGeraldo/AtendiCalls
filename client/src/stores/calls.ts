@@ -28,7 +28,16 @@ export const ensureCallsWired = (): void => {
       useCalls.setState((s) => ({
         calls: s.calls.map((c) =>
           c.callId === ev.id
-            ? { ...c, sessionId: ev.sessionId, status: ev.status, peer: ev.peer, startedAt: ev.startedAt }
+            ? {
+                ...c,
+                sessionId: ev.sessionId,
+                status: ev.status,
+                peer: ev.peer,
+                name: (ev as any).name ?? c.name,
+                pictureUrl: (ev as any).pictureUrl ?? c.pictureUrl,
+                startedAt: ev.startedAt,
+                connectedAt: (ev as any).connectedAt ?? c.connectedAt,
+              }
             : c,
         ),
       }));

@@ -1,100 +1,66 @@
-import { useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { LayoutDashboard, Phone, Smartphone, Users, LogOut, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { setActiveSession, useSessions } from "@/stores/sessions";
-import { createSession, deleteSession } from "@/services/sessions";
-import type { SessionInfo, SessionState } from "@/types/session";
+import { useAuth } from "@/stores/auth";
 
-const dotClass: Record<SessionState, string> = {
-  open: "bg-primary",
-  qr: "bg-amber-500",
-  connecting: "bg-muted-foreground/50",
-  logged_out: "bg-destructive",
-};
+export type Tab = "dashboard" | "calls" | "accounts" | "users";
 
-export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
-  const sessions = useSessions((s) => s.sessions);
-  const activeId = useSessions((s) => s.activeId);
-  const [creating, setCreating] = useState(false);
-  const [toDelete, setToDelete] = useState<SessionInfo | null>(null);
+interface SidebarProps {
+  activeTab: Tab;
+  onNavigate: (tab: Tab) => void;
+}
 
-  const onNew = async () => {
-    setCreating(true);
-    try {
-      const { id } = await createSession("WhatsApp");
-      setActiveSession(id);
-      onNavigate?.();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setCreating(false);
-    }
-  };
+export const Sidebar = ({ activeTab, onNavigate }: SidebarProps) => {
+  const user = useAuth((s) => s.user);
+  const logout = useAuth((s) => s.logout);
+  const isAdmin = user?.role === "admin";
 
-  const remove = async (id: string) => {
-    try {
-      await deleteSession(id);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
+  const tabs = [
+    { id: "dashboard" as Tab, label: "Dashboard", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { id: "calls" as Tab, label: "Ligações", icon: <Phone className="h-5 w-5" /> },
+    { id: "accounts" as Tab, label: "Contas WhatsApp", icon: <Smartphone className="h-5 w-5" /> },
+    ...(isAdmin ? [{ id: "users" as Tab, label: "Usuários", icon: <Users className="h-5 w-5" /> }] : []),
+  ];
 
   return (
-    <div className="flex h-full flex-col gap-2 p-3">
-      <p className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Accounts</p>
-      <div className="flex-1 space-y-1 overflow-y-auto">
-        {sessions.map((s) => (
-          <div
-            key={s.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              setActiveSession(s.id);
-              onNavigate?.();
-            }}
-            className={cn(
-              "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm",
-              s.id === activeId ? "bg-accent text-accent-foreground" : "hover:bg-muted",
-            )}
-          >
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass[s.state])} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{s.name}</p>
-              {s.jid && <p className="truncate text-xs text-muted-foreground">{s.jid.split("@")[0]}</p>}
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setToDelete(s);
-              }}
-              className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-              aria-label={`Delete ${s.name}`}
+    <div className="flex h-full flex-col justify-between p-3 select-none">
+      <div className="space-y-2">
+        <nav className="space-y-1">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate(tab.id)}
+              className={cn(
+                "flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors",
+                activeTab === tab.id
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              )}
             >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-        {sessions.length === 0 && <p className="px-2 text-sm text-muted-foreground">No accounts yet.</p>}
+              {tab.icon}
+              {tab.label}
+            </div>
+          ))}
+        </nav>
       </div>
-      <Button variant="outline" className="w-full" onClick={onNew} disabled={creating}>
-        {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        New session
-      </Button>
 
-      <ConfirmDialog
-        open={!!toDelete}
-        onOpenChange={(o) => !o && setToDelete(null)}
-        title="Delete account?"
-        description={toDelete ? `${toDelete.name} will be logged out and removed.` : undefined}
-        confirmLabel="Delete"
-        destructive
-        onConfirm={() => {
-          if (toDelete) void remove(toDelete.id);
-        }}
-      />
+      <div className="mt-auto border-t pt-4 px-2 space-y-4">
+        <div className="flex items-center gap-3 px-2">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold dark:bg-emerald-900/40 dark:text-emerald-400">
+            {user?.name?.slice(0, 2).toUpperCase() || "US"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">{user?.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+        </div>
+        <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive gap-3 rounded-xl h-11" onClick={logout}>
+          <LogOut className="h-5 w-5" />
+          Sair do Sistema
+        </Button>
+      </div>
     </div>
   );
 };

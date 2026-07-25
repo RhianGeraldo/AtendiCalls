@@ -64,3 +64,8 @@ func (s *sessionStore) delete(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
 	return err
 }
+
+func (s *sessionStore) rename(ctx context.Context, id, name string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET name = ? WHERE id = ?`, name, id)
+	return err
+}
