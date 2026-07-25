@@ -10,9 +10,16 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/store"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
+	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_UWP.Enum()
+	store.DeviceProps.Os = proto.String("Windows")
+
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	dbPath := flag.String("db", "wacalls.db", "SQLite session database path")
 	staticDir := flag.String("static", "client/dist", "static client directory (optional)")

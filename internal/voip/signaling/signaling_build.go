@@ -244,6 +244,17 @@ func BuildAcceptReceiptStanza(peerDeviceJid types.JID, acceptMsgID, callID strin
 	}
 }
 
+func BuildOfferReceiptStanza(peerDeviceJid types.JID, offerMsgID, callID string, callCreator, ourJid types.JID) waBinary.Node {
+	return waBinary.Node{
+		Tag:   "receipt",
+		Attrs: waBinary.Attrs{"to": peerDeviceJid, "id": offerMsgID, "from": ourJid, "type": "caller"},
+		Content: []waBinary.Node{{
+			Tag:   "offer",
+			Attrs: waBinary.Attrs{"call-id": callID, "call-creator": callCreator},
+		}},
+	}
+}
+
 func callWrap(to types.JID, inner waBinary.Node) waBinary.Node {
 	return waBinary.Node{
 		Tag:     "call",

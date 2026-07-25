@@ -80,10 +80,8 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 	m.initCodec()
 	m.mu.Unlock()
 
-	preaccept := signaling.BuildPreacceptStanza(peerJid, callID, wanode.MustJID(creator))
-	if err := m.sock.SendNode(ctx, preaccept); err != nil {
-		m.log.Error("send preaccept", "err", err)
-	}
+	// Do not send anything automatically to avoid getting "uncallable" terminate.
+	// We will let the phone ring, and only send an accept stanza when the user clicks Accept.
 
 	if m.OnIncoming != nil {
 		m.OnIncoming(call)
