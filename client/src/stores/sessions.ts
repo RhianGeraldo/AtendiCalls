@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { eventStream, type BrokerEvent } from "@/lib/event-stream";
 import { getClientId } from "@/lib/client-id";
 import { listSessions } from "@/services/sessions";
+import { useAuth } from "./auth";
 import type { SessionInfo } from "@/types/session";
 
 type State = {
@@ -23,7 +24,8 @@ let wired = false;
 export const ensureSessionsWired = (): void => {
   if (wired) return;
   wired = true;
-  eventStream.connect(getClientId());
+  const authUser = useAuth.getState().user;
+  eventStream.connect(authUser?.id || getClientId());
 
   void listSessions()
     .then((sessions) => useSessions.setState((s) => ({ sessions, activeId: pickActive(sessions, s.activeId) })))

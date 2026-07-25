@@ -84,11 +84,16 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		if existing != nil {
 			rec.Owner = existing.Owner
 			rec.StartedAt = existing.StartedAt
+			rec.ConnectedAt = existing.ConnectedAt
 			rec.Name = existing.Name
 			rec.PictureURL = existing.PictureURL
 			if strings.HasSuffix(rec.Peer, "@lid") && existing.Peer != "" && !strings.HasSuffix(existing.Peer, "@lid") {
 				rec.Peer = existing.Peer
 			}
+		}
+		if rec.Status == StatusConnected && rec.ConnectedAt == nil {
+			now := time.Now().UnixMilli()
+			rec.ConnectedAt = &now
 		}
 		s.mgr.broker.upsertCall(rec)
 	}

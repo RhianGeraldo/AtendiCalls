@@ -1,9 +1,21 @@
 import { getClientId } from "./client-id";
+import { useAuth } from "@/stores/auth";
 
-const baseHeaders = (): HeadersInit => ({
-  "X-Client-Id": getClientId(),
-  "Content-Type": "application/json",
-});
+const baseHeaders = (): HeadersInit => {
+  const token = useAuth.getState().token;
+  const user = useAuth.getState().user;
+  
+  const headers: Record<string, string> = {
+    "X-Client-Id": user?.id || getClientId(),
+    "Content-Type": "application/json",
+  };
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
 
 export const apiGet = async <T>(path: string): Promise<T> => {
   const r = await fetch(path, { headers: baseHeaders() });

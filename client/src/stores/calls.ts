@@ -4,6 +4,7 @@ import { getClientId } from "@/lib/client-id";
 import { queryClient, queryKeys } from "@/lib/query";
 import type { OpenCall } from "@/lib/webrtc";
 import type { CallSummary, IncomingPayload } from "@/types/call";
+import { useAuth } from "./auth";
 
 type State = {
   calls: CallSummary[];
@@ -62,7 +63,10 @@ export const ensureCallsWired = (): void => {
   });
 };
 
-export const isMine = (call: CallSummary): boolean => call.owner === getClientId();
+export const isMine = (call: CallSummary): boolean => {
+  const authUser = useAuth.getState().user;
+  return call.owner === (authUser?.id || getClientId());
+};
 
 export const registerOwnConnection = (id: string, conn: OpenCall): void => {
   useCalls.setState((s) => {
