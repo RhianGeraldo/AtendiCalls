@@ -1,4 +1,4 @@
-import { LayoutDashboard, Phone, Smartphone, Users, LogOut, Loader2 } from "lucide-react";
+import { LayoutDashboard, Phone, Smartphone, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";

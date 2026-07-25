@@ -140,6 +140,11 @@ func (m *CallManager) AcceptCall(ctx context.Context, callID string) error {
 		m.mu.Unlock()
 		return &CallError{"call cannot be accepted in state " + string(call.StateData.State)}
 	}
+	if call.EncryptionKey == nil {
+		m.mu.Unlock()
+		return &CallError{"cannot accept call: encryption key is missing (decryption failed during offer)"}
+	}
+
 	_ = call.ApplyTransition(Transition{Type: TransitionLocalAccepted})
 	m.emitState()
 	key := call.EncryptionKey
@@ -149,13 +154,11 @@ func (m *CallManager) AcceptCall(ctx context.Context, callID string) error {
 	relayData := call.RelayData
 	m.mu.Unlock()
 
-	if key != nil {
-		acceptNode, err := signaling.BuildAcceptStanza(ctx, m.sock, callID, key, peer, creator, isVideo)
-		if err != nil {
-			m.log.Error("build accept failed", "err", err)
-		} else if err := m.sock.SendNode(ctx, acceptNode); err != nil {
-			m.log.Error("accept send error", "err", err)
-		}
+	acceptNode, err := signaling.BuildAcceptStanza(ctx, m.sock, callID, key, peer, creator, isVideo)
+	if err != nil {
+		m.log.Error("build accept failed", "err", err)
+	} else if err := m.sock.SendNode(ctx, acceptNode); err != nil {
+		m.log.Error("accept send error", "err", err)
 	}
 
 	if relayData != nil {

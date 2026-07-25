@@ -38,6 +38,7 @@ export const ensureCallsWired = (): void => {
                 pictureUrl: (ev as any).pictureUrl ?? c.pictureUrl,
                 startedAt: ev.startedAt,
                 connectedAt: (ev as any).connectedAt ?? c.connectedAt,
+                owner: (ev as any).owner ?? c.owner,
               }
             : c,
         ),
@@ -56,7 +57,7 @@ export const ensureCallsWired = (): void => {
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.history });
     } else if (ev.type === "incoming") {
-      useCalls.setState({ incoming: { sessionId: ev.sessionId, callId: ev.id, peer: ev.peer, offeredAt: ev.offeredAt } });
+      useCalls.setState({ incoming: { sessionId: ev.sessionId, callId: ev.id, peer: ev.peer, name: (ev as any).name, pictureUrl: (ev as any).pictureUrl, offeredAt: ev.offeredAt } });
     } else if (ev.type === "incoming-claimed") {
       useCalls.setState((s) => (s.incoming?.callId === ev.id ? { incoming: null } : s));
     }

@@ -60,11 +60,46 @@ func (s *Session) createCall(callID string) *call.CallManager {
 
 func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	cm.OnIncoming = func(c *call.CallInfo) {
+		displayPeer := c.PeerJid
+		if c.CallCreator != "" {
+			displayPeer = c.CallCreator
+		}
+
+		peerJid, _ := types.ParseJID(displayPeer)
+
+		if peerJid.Server == types.HiddenUserServer {
+			pn, err := s.client.Store.LIDs.GetPNForLID(context.Background(), peerJid)
+			if err != nil {
+				s.log.Error("GetPNForLID failed", "err", err, "lid", peerJid)
+			} else if pn.IsEmpty() {
+				s.log.Warn("GetPNForLID returned empty", "lid", peerJid)
+			} else {
+				s.log.Info("GetPNForLID succeeded", "lid", peerJid, "pn", pn)
+				peerJid = pn
+				displayPeer = peerJid.ToNonAD().String()
+			}
+		}
+
+		name := ""
+		if ci, err := s.client.Store.Contacts.GetContact(context.Background(), peerJid); err == nil && ci.Found {
+			if ci.PushName != "" {
+				name = ci.PushName
+			} else if ci.FullName != "" {
+				name = ci.FullName
+			}
+		}
+
+		pictureURL := ""
+		if pic, err := s.client.GetProfilePictureInfo(context.Background(), peerJid, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
+			pictureURL = pic.URL
+		}
+
 		s.mgr.broker.upsertCall(CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: "inbound", Peer: c.PeerJid,
+			SessionID: s.id, CallID: c.CallID, Direction: "inbound", Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
+			Name: name, PictureURL: pictureURL,
 		})
-		s.mgr.broker.emitIncoming(s.id, c.CallID, c.PeerJid)
+		s.mgr.broker.emitIncoming(s.id, c.CallID, displayPeer, name, pictureURL)
 	}
 	cm.OnStateChange = func(c *call.CallInfo) {
 		if c.IsEnded() {
@@ -76,9 +111,27 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		if c.Direction == core.CallDirectionIncoming {
 			dir = "inbound"
 		}
+
+		displayPeer := c.PeerJid
+		if c.CallCreator != "" {
+			displayPeer = c.CallCreator
+		}
+
+		peerJid, _ := types.ParseJID(displayPeer)
+		if peerJid.Server == types.HiddenUserServer {
+			pn, err := s.client.Store.LIDs.GetPNForLID(context.Background(), peerJid)
+			if err != nil {
+				s.log.Error("GetPNForLID failed in state change", "err", err, "lid", peerJid)
+			} else if pn.IsEmpty() {
+				s.log.Warn("GetPNForLID returned empty in state change", "lid", peerJid)
+			} else {
+				displayPeer = pn.ToNonAD().String()
+			}
+		}
+
 		existing, _ := s.mgr.broker.getCall(c.CallID)
 		rec := CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: c.PeerJid,
+			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: mapStatus(c.StateData.State),
 		}
 		if existing != nil {

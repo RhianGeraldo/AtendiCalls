@@ -23,10 +23,12 @@ import { useDevices } from "@/stores/devices";
 import { useCalls, isMine } from "@/stores/calls";
 import { useStartCall } from "@/hooks/useStartCall";
 import { useEndCall } from "@/hooks/useEndCall";
+import { useAcceptCall } from "@/hooks/useAcceptCall";
+import { useRejectCall } from "@/hooks/useRejectCall";
+import type { CallStatus } from "@/types/call";
 import { attachMeter } from "@/lib/audio-meter";
 import { formatCallDuration } from "@/utils/format";
 import { toast } from "sonner";
-import type { CallStatus } from "@/types/call";
 
 const KEYPAD = [
   { key: "1", sub: "" },
@@ -111,6 +113,58 @@ export const PhoneDialerModal = () => {
   const activeSession = sessions.find((s) => s.id === currentSid);
   const startCall = useStartCall(currentSid, micId);
   const endCall = useEndCall();
+
+  // Incoming call
+  const incoming = useCalls((s) => s.incoming);
+  const accept = useAcceptCall(micId);
+  const reject = useRejectCall();
+  const isIncomingForSession = incoming && incoming.sessionId === currentSid;
+
+  // Ring tone logic for incoming calls
+  useEffect(() => {
+    if (!incoming) return;
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AC) return;
+    let ctx: AudioContext;
+    try {
+      ctx = new AC();
+    } catch {
+      return;
+    }
+    let cancelled = false;
+    const playToneAt = (when: number, durationSec: number, freq: number, gainVal = 0.18) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + when;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(gainVal, t + 0.02);
+      gain.gain.linearRampToValueAtTime(gainVal, t + durationSec - 0.02);
+      gain.gain.linearRampToValueAtTime(0, t + durationSec);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + durationSec + 0.05);
+    };
+    const scheduleCycle = () => {
+      if (cancelled) return;
+      playToneAt(0, 1.0, 440);
+      playToneAt(0, 1.0, 480);
+      setTimeout(scheduleCycle, 3000);
+    };
+    scheduleCycle();
+    return () => {
+      cancelled = true;
+      void ctx.close().catch(() => {});
+    };
+  }, [incoming]);
+
+  // Open dialer automatically when incoming call arrives
+  useEffect(() => {
+    if (incoming) {
+      useDialerStore.getState().openDialer(incoming.sessionId);
+    }
+  }, [incoming]);
 
   // Reset or preset phone when opened
   useEffect(() => {
@@ -426,7 +480,19 @@ export const PhoneDialerModal = () => {
       </div>
 
       {/* --- VIEW B: ACTIVE CALL INTERFACE --- */}
-      {activeCall ? (
+      {(() => {
+        const displayCall = activeCall || (isIncomingForSession ? {
+          status: "ringing_incoming",
+          peer: incoming.peer,
+          name: incoming.name || "",
+          pictureUrl: incoming.pictureUrl || "",
+          startedAt: incoming.offeredAt,
+          connectedAt: 0,
+        } : null) as any;
+
+        if (!displayCall) return null;
+        
+        return (
         <div className="flex-1 flex flex-col items-center justify-between py-3 text-center">
           {/* Header Tag & Recording Indicator */}
           <div className="flex items-center gap-2">
@@ -443,21 +509,21 @@ export const PhoneDialerModal = () => {
           {/* Avatar & Pulse Ring */}
           <div className="relative flex items-center justify-center my-2">
             <div
-              className={`flex h-24 w-24 overflow-hidden items-center justify-center rounded-2xl border-2 bg-muted/30 shadow-md ${
-                activeCall.status === "ringing" || activeCall.status === "starting"
+              className={`flex h-24 w-24 overflow-hidden items-center justify-center rounded-full border-2 bg-muted/30 shadow-md ${
+                displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming"
                   ? "animate-pulse border-amber-500/50 bg-amber-500/10 text-amber-500"
-                  : activeCall.status === "connected"
+                  : displayCall.status === "connected"
                   ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
                   : "border-muted text-muted-foreground"
               }`}
             >
-              {activeCall.pictureUrl ? (
-                <img src={activeCall.pictureUrl} alt={activeCall.name || activeCall.peer} className="h-full w-full object-cover" />
+              {displayCall.pictureUrl ? (
+                <img src={displayCall.pictureUrl} alt={displayCall.name || displayCall.peer} className="h-full w-full object-cover" />
               ) : (
                 <User className="h-12 w-12" />
               )}
             </div>
-            {(activeCall.status === "ringing" || activeCall.status === "starting") && (
+            {(displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming") && (
               <span className="absolute -top-1 -right-1 flex h-4 w-4">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
@@ -468,27 +534,27 @@ export const PhoneDialerModal = () => {
           {/* Peer Info & Status */}
           <div className="space-y-1 w-full px-2">
             <h3 className="text-xl font-bold tracking-tight text-foreground truncate">
-              {activeCall.name || (activeCall.peer ? formatPhoneBR(activeCall.peer.split("@")[0]) : formattedDisplay || phone)}
+              {displayCall.name || (displayCall.peer ? formatPhoneBR(displayCall.peer.split("@")[0]) : formattedDisplay || phone)}
             </h3>
-            {activeCall.name && (
+            {displayCall.name && (
               <p className="text-xs text-muted-foreground font-mono">
-                {formatPhoneBR(activeCall.peer.split("@")[0])}
+                {formatPhoneBR(displayCall.peer.split("@")[0])}
               </p>
             )}
             <div className="flex items-center justify-center gap-2">
-              <Badge variant={statusVariant[activeCall.status]} className="px-3 py-0.5 text-xs font-medium">
-                {statusLabel[activeCall.status] || activeCall.status}
+              <Badge variant={displayCall.status === "ringing_incoming" ? "secondary" : statusVariant[displayCall.status as CallStatus]} className="px-3 py-0.5 text-xs font-medium">
+                {displayCall.status === "ringing_incoming" ? "Recebendo chamada..." : (statusLabel[displayCall.status as CallStatus] || displayCall.status)}
               </Badge>
-              {activeCall.status === "connected" && (
+              {displayCall.status === "connected" && (
                 <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  {formatCallDuration(activeCall.startedAt, activeCall.status, activeCall.connectedAt)}
+                  {formatCallDuration(displayCall.startedAt, displayCall.status, displayCall.connectedAt)}
                 </span>
               )}
             </div>
           </div>
 
           {/* Audio Meter */}
-          {activeCall.status === "connected" && (
+          {displayCall.status === "connected" && (
             <div className="w-full px-4 space-y-1">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground font-medium">
                 <span className="flex items-center gap-1.5">
@@ -507,50 +573,74 @@ export const PhoneDialerModal = () => {
             </div>
           )}
 
-          {/* Call Controls (Silenciar, Gravar e Encerrar) */}
-          <div className="flex items-center justify-center gap-5 mb-2 w-full pt-2">
-            <button
-              type="button"
-              onClick={toggleMute}
-              disabled={activeCall.status !== "connected"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
-                isMuted
-                  ? "bg-slate-800 text-white border-slate-800 shadow-md"
-                  : "bg-muted/50 hover:bg-muted text-foreground border-muted-foreground/20"
-              } disabled:opacity-40 disabled:pointer-events-none`}
-              title={isMuted ? "Desmutar Microfone" : "Silenciar Microfone"}
-            >
-              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            </button>
+          {/* Call Controls */}
+          {displayCall.status === "ringing_incoming" ? (
+            <div className="flex items-center justify-center gap-6 mb-2 w-full pt-2">
+              <Button
+                variant="destructive"
+                size="icon"
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
+                disabled={accept.isPending || reject.isPending}
+                onClick={() => incoming && reject.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
+              >
+                <PhoneOff className="h-6 w-6" />
+              </Button>
+              <Button
+                size="icon"
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all text-white"
+                disabled={accept.isPending || reject.isPending}
+                onClick={() => incoming && accept.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
+              >
+                <Phone className="h-6 w-6" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-5 mb-2 w-full pt-2">
+              <button
+                type="button"
+                onClick={toggleMute}
+                disabled={displayCall.status !== "connected"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
+                  isMuted
+                    ? "bg-slate-800 text-white border-slate-800 shadow-md"
+                    : "bg-muted/50 hover:bg-muted text-foreground border-muted-foreground/20"
+                } disabled:opacity-40 disabled:pointer-events-none`}
+                title={isMuted ? "Desmutar Microfone" : "Silenciar Microfone"}
+              >
+                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </button>
 
-            <button
-              type="button"
-              onClick={toggleRecording}
-              disabled={activeCall.status !== "connected"}
-              className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
-                isRecording
-                  ? "bg-red-600 text-white border-red-600 shadow-md animate-pulse"
-                  : "bg-muted/50 hover:bg-muted text-red-500 border-muted-foreground/20"
-              } disabled:opacity-40 disabled:pointer-events-none`}
-              title={isRecording ? "Parar Gravação" : "Gravar Chamada"}
-            >
-              {isRecording ? <Square className="h-5 w-5 fill-white" /> : <Disc className="h-5 w-5" />}
-            </button>
+              <button
+                type="button"
+                onClick={toggleRecording}
+                disabled={displayCall.status !== "connected"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
+                  isRecording
+                    ? "bg-red-600 text-white border-red-600 shadow-md animate-pulse"
+                    : "bg-muted/50 hover:bg-muted text-red-500 border-muted-foreground/20"
+                } disabled:opacity-40 disabled:pointer-events-none`}
+                title={isRecording ? "Parar Gravação" : "Gravar Chamada"}
+              >
+                {isRecording ? <Square className="h-5 w-5 fill-white" /> : <Disc className="h-5 w-5" />}
+              </button>
 
-            <button
-              type="button"
-              onClick={handleHangup}
-              disabled={endCall.isPending}
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
-              title="Finalizar Chamada"
-            >
-              <PhoneOff className="h-6 w-6" />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleHangup}
+                disabled={endCall.isPending}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
+                title="Finalizar Chamada"
+              >
+                <PhoneOff className="h-6 w-6" />
+              </button>
+            </div>
+          )}
 
           <audio ref={audioRef} autoPlay />
         </div>
-      ) : (
+        );
+      })()}
+      {!activeCall && !isIncomingForSession && (
         /* --- VIEW A: KEYPAD DIALER INTERFACE --- */
         <div className="flex-1 flex flex-col justify-between pt-2">
           {/* Number Display & Input Area */}

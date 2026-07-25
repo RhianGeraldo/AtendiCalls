@@ -13,4 +13,4 @@ export type CallSummary = {
   status: CallStatus;
 };
 
-export type IncomingPayload = { sessionId: string; callId: string; peer: string; offeredAt: number };
+export type IncomingPayload = { sessionId: string; callId: string; peer: string; name?: string; pictureUrl?: string; offeredAt: number };

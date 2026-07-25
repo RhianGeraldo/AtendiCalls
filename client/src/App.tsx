@@ -9,7 +9,6 @@ import { AccountsPage } from "@/pages/AccountsPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PhoneDialerModal } from "@/components/domain/call/PhoneDialerModal";
-import { IncomingCallModal } from "@/components/domain/call/IncomingCallModal";
 import { ensureSessionsWired, useSessions } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useTheme } from "@/stores/theme";
@@ -48,7 +47,6 @@ export const App = () => {
         {activeTab === "users" && <UsersPage />}
       </AppShell>
       <PhoneDialerModal />
-      <IncomingCallModal />
       <Toaster theme={theme} position="top-right" richColors closeButton />
     </TooltipProvider>
   );

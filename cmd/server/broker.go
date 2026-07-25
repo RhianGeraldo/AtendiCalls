@@ -17,18 +17,18 @@ const (
 )
 
 type CallRecord struct {
-	SessionID string     `json:"sessionId"`
-	CallID    string     `json:"callId"`
-	Owner     *string    `json:"owner"`
-	Direction  string     `json:"direction"`
-	Peer       string     `json:"peer"`
-	Name       string     `json:"name,omitempty"`
-	PictureURL string     `json:"pictureUrl,omitempty"`
-	StartedAt int64      `json:"startedAt"`
-	ConnectedAt *int64   `json:"connectedAt,omitempty"`
-	Status    CallStatus `json:"status"`
-	EndedAt   *int64     `json:"endedAt,omitempty"`
-	EndReason string     `json:"endReason,omitempty"`
+	SessionID   string     `json:"sessionId"`
+	CallID      string     `json:"callId"`
+	Owner       *string    `json:"owner"`
+	Direction   string     `json:"direction"`
+	Peer        string     `json:"peer"`
+	Name        string     `json:"name,omitempty"`
+	PictureURL  string     `json:"pictureUrl,omitempty"`
+	StartedAt   int64      `json:"startedAt"`
+	ConnectedAt *int64     `json:"connectedAt,omitempty"`
+	Status      CallStatus `json:"status"`
+	EndedAt     *int64     `json:"endedAt,omitempty"`
+	EndReason   string     `json:"endReason,omitempty"`
 }
 
 type AuthSnapshot struct {
@@ -140,15 +140,24 @@ func (b *Broker) getCall(id string) (*CallRecord, bool) {
 
 func (b *Broker) setOwner(id, owner string) bool {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	c, ok := b.calls[id]
 	if !ok {
+		b.mu.Unlock()
 		return false
 	}
 	if c.Owner != nil && *c.Owner != owner {
+		b.mu.Unlock()
 		return false
 	}
 	c.Owner = &owner
+	b.mu.Unlock()
+
+	b.broadcastCallList()
+	b.broadcast(map[string]any{
+		"type": "call-status", "sessionId": c.SessionID, "id": c.CallID, "owner": c.Owner,
+		"status": c.Status, "peer": c.Peer, "startedAt": c.StartedAt, "connectedAt": c.ConnectedAt,
+	})
+
 	return true
 }
 
@@ -200,9 +209,9 @@ func (b *Broker) broadcastCallList() {
 	b.broadcast(map[string]any{"type": "call-list", "calls": list})
 }
 
-func (b *Broker) emitIncoming(sessionID, id, peer string) {
+func (b *Broker) emitIncoming(sessionID, id, peer, name, pictureUrl string) {
 	b.broadcast(map[string]any{
-		"type": "incoming", "sessionId": sessionID, "id": id, "peer": peer, "offeredAt": time.Now().UnixMilli(),
+		"type": "incoming", "sessionId": sessionID, "id": id, "peer": peer, "name": name, "pictureUrl": pictureUrl, "offeredAt": time.Now().UnixMilli(),
 	})
 }
 

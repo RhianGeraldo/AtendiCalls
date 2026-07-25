@@ -80,8 +80,24 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 	m.initCodec()
 	m.mu.Unlock()
 
-	// Do not send anything automatically to avoid getting "uncallable" terminate.
-	// We will let the phone ring, and only send an accept stanza when the user clicks Accept.
+	offerID := wanode.AttrString(node.Attrs, "id")
+	if offerID != "" {
+		ourJid := m.sock.OwnLID()
+		if ourJid.IsEmpty() {
+			ourJid = m.sock.OwnPN()
+		}
+		creatorJid := wanode.MustJID(creator)
+		receipt := signaling.BuildOfferReceiptStanza(peerJid, offerID, callID, creatorJid, ourJid)
+		if err := m.sock.SendNode(ctx, receipt); err != nil {
+			m.log.Error("send offer receipt", "err", err)
+		}
+
+		// Send preaccept to tell the caller that we are ringing!
+		preaccept := signaling.BuildPreacceptStanza(peerJid, callID, creatorJid)
+		if err := m.sock.SendNode(ctx, preaccept); err != nil {
+			m.log.Error("send preaccept", "err", err)
+		}
+	}
 
 	if m.OnIncoming != nil {
 		m.OnIncoming(call)
@@ -269,6 +285,11 @@ func (m *CallManager) HandleCallTerminate(node *waBinary.Node) {
 		if r := wanode.AttrString(info.InnerNode.Attrs, "reason"); r != "" {
 			reason = core.EndCallReason(r)
 		}
+	}
+	if reason == core.EndCallReason("uncallable") {
+		m.log.Info("ignoring uncallable terminate from peer", "call_id", call.CallID)
+		m.mu.Unlock()
+		return
 	}
 	m.log.Info("call terminated by peer", "call_id", call.CallID, "reason", string(reason))
 	_ = call.ApplyTransition(Transition{Type: TransitionTerminated, Reason: reason})

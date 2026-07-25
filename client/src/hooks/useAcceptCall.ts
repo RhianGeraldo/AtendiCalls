@@ -18,6 +18,8 @@ export const useAcceptCall = (micId: string | null) =>
         throw wrtcErr;
       }
       clearIncoming();
+      const { useDialerStore } = await import("@/stores/dialer");
+      useDialerStore.getState().openDialer(vars.sid);
       return res.call.callId;
     },
     onError: (e: Error) => {
