@@ -4,7 +4,7 @@ import (
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 )
 
 func DerivePerJidSrtpKey(callKey []byte, deviceJid string) (core.SrtpKeyingMaterial, error) {

@@ -63,7 +63,7 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 			id := newSessionID()
 			now := time.Now().UnixMilli()
 			_, _ = db.ExecContext(ctx, `INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-				id, "Administrador", "admin@wacalls.com", string(hash), string(RoleAdmin), now)
+				id, "Administrador", "admin@atendicalls.com", string(hash), string(RoleAdmin), now)
 		}
 	}
 

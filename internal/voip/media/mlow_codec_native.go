@@ -1,6 +1,6 @@
 package media
 
-import "wacalls/internal/voip/media/mlow"
+import "atendicalls/internal/voip/media/mlow"
 
 type mlowCodec struct {
 	enc *mlow.MlowEncoder

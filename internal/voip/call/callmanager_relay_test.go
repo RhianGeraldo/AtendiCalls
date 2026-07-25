@@ -2,7 +2,7 @@ package call
 
 import (
 	"testing"
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 )
 
 func TestBuildRelayConfigs(t *testing.T) {

@@ -1,9 +1,9 @@
 package call
 
 import (
-	"wacalls/internal/voip/core"
-	"wacalls/internal/voip/media"
-	"wacalls/internal/voip/wanode"
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/media"
+	"atendicalls/internal/voip/wanode"
 
 	"go.mau.fi/whatsmeow/types"
 )

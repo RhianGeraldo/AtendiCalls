@@ -50,7 +50,7 @@ export const useAuth = create<AuthState>()(
       },
     }),
     {
-      name: "wacalls_auth",
+      name: "atendicalls_auth",
       partialize: (state) => ({ token: state.token }),
     }
   )

@@ -8,7 +8,7 @@ import { useAuth } from "@/stores/auth";
 export const LoginPage = () => {
   const login = useAuth((s) => s.login);
 
-  const [email, setEmail] = useState("admin@wacalls.com");
+  const [email, setEmail] = useState("admin@atendicalls.com");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -36,7 +36,7 @@ export const LoginPage = () => {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">
             <PhoneCall className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">WaCalls</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">AtendiCalls</h1>
           <p className="text-xs text-muted-foreground">Sistema de Telefonia VoIP & Softphone WhatsApp</p>
         </div>
 
@@ -58,7 +58,7 @@ export const LoginPage = () => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu.email@wacalls.com"
+              placeholder="seu.email@atendicalls.com"
               required
               className="rounded-xl"
             />
@@ -90,7 +90,7 @@ export const LoginPage = () => {
         {/* Footer info */}
         <div className="border-t border-muted/50 pt-4 text-center text-[11px] text-muted-foreground">
           <p>Credenciais Padrão Admin:</p>
-          <p className="font-mono text-foreground font-medium">admin@wacalls.com / admin123</p>
+          <p className="font-mono text-foreground font-medium">admin@atendicalls.com / admin123</p>
         </div>
       </div>
     </div>

@@ -2,9 +2,9 @@ package call
 
 import (
 	"time"
-	"wacalls/internal/voip/core"
-	"wacalls/internal/voip/media"
-	"wacalls/internal/voip/transport"
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/media"
+	"atendicalls/internal/voip/transport"
 )
 
 func (m *CallManager) initCodec() {

@@ -1,13 +1,13 @@
 /docs
-/wacalls-server.exe
-/wacalls.exe
+/atendicalls-server.exe
+/atendicalls.exe
 run-mlow.ps1
 *.exe
 *.test
 *.out
 /dist/
 /bin/
-wacalls.db
+atendicalls.db
 *.db
 *.db-journal
 *.db-wal

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 
 	"go.mau.fi/whatsmeow"
 	"golang.org/x/crypto/bcrypt"

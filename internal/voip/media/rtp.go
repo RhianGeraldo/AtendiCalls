@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/big"
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 )
 
 const (

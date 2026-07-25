@@ -1,8 +1,8 @@
 package call
 
 import (
-	"wacalls/internal/voip/core"
-	"wacalls/internal/voip/transport"
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/transport"
 )
 
 type RelayTransport interface {

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 )
 
 // Incoming media path: once a relay connects for an accepted incoming call

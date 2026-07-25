@@ -3,7 +3,7 @@ package call
 import (
 	"testing"
 
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 )
 
 func TestCallStateMachine(t *testing.T) {

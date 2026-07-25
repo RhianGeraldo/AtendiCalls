@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"wacalls/internal/voip/call"
-	"wacalls/internal/voip/core"
-	"wacalls/internal/voip/signaling"
-	"wacalls/internal/voip/wanode"
-	"wacalls/internal/wa"
+	"atendicalls/internal/voip/call"
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/signaling"
+	"atendicalls/internal/voip/wanode"
+	"atendicalls/internal/wa"
 
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"sync"
 	"time"
-	"wacalls/internal/voip/core"
+	"atendicalls/internal/voip/core"
 
 	"github.com/pion/webrtc/v4"
 )

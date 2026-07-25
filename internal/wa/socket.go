@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"wacalls/internal/voip/core"
-	"wacalls/internal/voip/signaling"
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/signaling"
 
 	"go.mau.fi/whatsmeow"
 	waBinary "go.mau.fi/whatsmeow/binary"

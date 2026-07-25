@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📞 WaCalls (Go)
+# 📞 AtendiCalls (Go)
 
 **Native WhatsApp voice calls in pure Go, straight from the browser.**
 Built for native VoIP media, multi-account (multi-session) operation, and a modern browser client.
@@ -19,7 +19,7 @@ Built for native VoIP media, multi-account (multi-session) operation, and a mode
 
 ## Overview
 
-WaCalls pairs one or more WhatsApp accounts via **QR code** and lets you **place and
+AtendiCalls pairs one or more WhatsApp accounts via **QR code** and lets you **place and
 receive 1:1 voice calls** from any browser on the LAN. The browser microphone is sent
 as **raw 16 kHz PCM over a WebRTC data channel** to the Go server, which encodes it with
 Meta's **MLow** codec and injects the media into WhatsApp's **SRTP relay** mesh — and the
@@ -37,7 +37,7 @@ concurrent 1:1 calls** at once — one per browser operator — routed independe
 
 > **Status:** stable. Outgoing and incoming 1:1 calls reach `ACTIVE` with bidirectional
 > audio, and a single account can hold several of them concurrently. Sessions persist in
-> `wacalls.db` (pure-Go SQLite).
+> `atendicalls.db` (pure-Go SQLite).
 
 ---
 
@@ -129,8 +129,8 @@ pure Go (`internal/voip/media/mlow`).
 
 ```bash
 # clone and enter the project
-git clone <repo-url> wacalls-go
-cd wacalls-go
+git clone <repo-url> atendicalls-go
+cd atendicalls-go
 
 # Go dependencies
 go mod download
@@ -171,7 +171,7 @@ go run ./cmd/server -static client/dist -addr :8080
 | Flag | Default | Meaning |
 |---|---|---|
 | `-addr` | `:8080` | HTTP listen address |
-| `-db` | `wacalls.db` | SQLite session database path |
+| `-db` | `atendicalls.db` | SQLite session database path |
 | `-static` | `client/dist` | Static client directory (optional) |
 | `-debug` | `false` | Verbose logging (includes whatsmeow's internal log) |
 | `-max-calls-per-session` | `8` | Max concurrent calls per session (`0` = unlimited) |
@@ -212,7 +212,7 @@ cd client && npm run build    # client type-check + production build
 ## Security
 
 The API has **no authentication** — anyone with HTTP access can create accounts, place
-calls, and read history. **Run it only on a trusted LAN.** `wacalls.db` holds WhatsApp
+calls, and read history. **Run it only on a trusted LAN.** `atendicalls.db` holds WhatsApp
 session credentials (secrets): **do not commit it** and keep it protected.
 
 ---

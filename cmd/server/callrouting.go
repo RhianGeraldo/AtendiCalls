@@ -1,7 +1,7 @@
 package main
 
 import (
-	"wacalls/internal/voip/signaling"
+	"atendicalls/internal/voip/signaling"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
 )

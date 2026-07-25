@@ -196,7 +196,7 @@ export const UsersPage = () => {
 
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">E-mail de Acesso</label>
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="joao@wacalls.com" required />
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="joao@atendicalls.com" required />
               </div>
 
               <div className="space-y-1">
