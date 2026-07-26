@@ -108,19 +108,37 @@ export const CampaignRunnerModal = () => {
     }
   }, [activeCall, isOpen, currentItem]);
 
-  // Auto-Dialer logic: Automatically dial when contact is loaded and autoDial is ON
+  // Track previous call state to detect call termination transitions
+  const prevCallStateRef = useRef(callState);
+
+  // Auto-Dialer logic & Call Termination Transition Listener
   useEffect(() => {
-    if (
-      isOpen &&
-      autoDial &&
-      !isPaused &&
-      currentItem &&
-      callState === "idle" &&
-      countdown === 0 &&
-      !startCallMutation.isPending &&
-      !activeCall
-    ) {
-      handleDialCurrentItem();
+    if (!isOpen || !currentItem || isPaused) return;
+
+    const prev = prevCallStateRef.current;
+    prevCallStateRef.current = callState;
+
+    // AUTO-PROGRESSION WHEN AUTO-DIAL IS ON:
+    if (autoDial && countdown === 0) {
+      // Transition 1: Call was CONNECTED and now ended (hangup by seller or client)
+      if (prev === "connected" && callState === "idle") {
+        handleFinishAndNext("answered");
+        return;
+      }
+      // Transition 2: Call was CALLING (discando) and now ended/rejected without connecting
+      if (prev === "calling" && callState === "idle") {
+        handleFinishAndNext("no_answer");
+        return;
+      }
+
+      // Transition 3: Auto-dial current contact if idle and no call active
+      if (
+        callState === "idle" &&
+        !startCallMutation.isPending &&
+        !activeCall
+      ) {
+        handleDialCurrentItem();
+      }
     }
   }, [isOpen, autoDial, isPaused, currentItem, callState, countdown]);
 
