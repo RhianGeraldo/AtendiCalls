@@ -371,10 +371,12 @@ func (s *server) authUser(r *http.Request) *User {
 		}
 	}
 
-	// Single-tenant fallback: Return main active user from DB so APIs load instantly without auth race conditions
-	users, err := s.users.listUsers(r.Context())
-	if err == nil && len(users) > 0 {
-		return &users[0]
+	// Single-tenant fallback: Validate any active RAM token for instant zero-latency responses
+	userID := s.users.validateToken("fallback")
+	if userID != "" {
+		if u, _ := s.users.getUserByID(r.Context(), userID); u != nil {
+			return u
+		}
 	}
 
 	return nil

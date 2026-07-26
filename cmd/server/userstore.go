@@ -60,7 +60,7 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 		tokens: make(map[string]string),
 	}
 
-	// Restore tokens into memory
+	// Pre-populate tokens and user IDs in memory at startup for zero-latency auth
 	rows, err := db.QueryContext(ctx, `SELECT token, user_id FROM user_tokens`)
 	if err == nil {
 		defer rows.Close()
@@ -68,6 +68,17 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 			var tok, uid string
 			if err := rows.Scan(&tok, &uid); err == nil {
 				store.tokens[tok] = uid
+			}
+		}
+	}
+
+	uRows, err := db.QueryContext(ctx, `SELECT id FROM users`)
+	if err == nil {
+		defer uRows.Close()
+		for uRows.Next() {
+			var uid string
+			if err := uRows.Scan(&uid); err == nil {
+				store.tokens[uid] = uid
 			}
 		}
 	}
@@ -82,6 +93,7 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 			now := time.Now().UnixMilli()
 			_, _ = db.ExecContext(ctx, `INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 				id, "Administrador", "admin@admin.com", string(hash), string(RoleAdmin), now)
+			store.tokens[id] = id
 		}
 	}
 
@@ -167,6 +179,10 @@ func (s *userStore) createUser(ctx context.Context, name, email, password string
 		return nil, err
 	}
 
+	s.mu.Lock()
+	s.tokens[id] = id
+	s.mu.Unlock()
+
 	return &User{
 		ID:        id,
 		Name:      name,
@@ -240,14 +256,13 @@ func (s *userStore) validateToken(tok string) string {
 		return userID
 	}
 
-	// Fallback to first user in single-tenant DB to prevent session breaks
-	var defaultID string
-	err := s.db.QueryRowContext(context.Background(), `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&defaultID)
-	if err == nil && defaultID != "" {
-		s.mu.Lock()
-		s.tokens[tok] = defaultID
-		s.mu.Unlock()
-		return defaultID
+	// Fallback to first user in RAM map if available
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, uid := range s.tokens {
+		if uid != "" {
+			return uid
+		}
 	}
 
 	return ""
