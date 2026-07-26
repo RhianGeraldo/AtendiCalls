@@ -2,6 +2,8 @@ export type CallStatus = "starting" | "ringing" | "connected" | "ended";
 
 export type CallSummary = {
   sessionId: string;
+  sessionName?: string;
+  sessionPhone?: string;
   callId: string;
   owner: string | null;
   direction: "outbound" | "inbound";
@@ -19,6 +21,8 @@ export type IncomingPayload = { sessionId: string; callId: string; peer: string;
 
 export type CallHistoryItem = {
   sessionId: string;
+  sessionName?: string;
+  sessionPhone?: string;
   callId: string;
   owner: string | null;
   direction: "outbound" | "inbound";

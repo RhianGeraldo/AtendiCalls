@@ -64,6 +64,8 @@ func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
 	query := `CREATE TABLE IF NOT EXISTS call_records (
 		id TEXT PRIMARY KEY,
 		session_id TEXT NOT NULL,
+		session_name TEXT DEFAULT '',
+		session_phone TEXT DEFAULT '',
 		direction TEXT NOT NULL,
 		peer TEXT NOT NULL,
 		peer_name TEXT DEFAULT '',
@@ -84,6 +86,10 @@ func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create call_records table: %w", err)
 	}
+
+	// Auto-migrations for new columns
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_name TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_phone TEXT DEFAULT ''`)
 
 	return &callStore{db: db}, nil
 }
@@ -107,10 +113,12 @@ func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
 
 	query := `
 	INSERT INTO call_records (
-		id, session_id, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		id, session_id, session_name, session_phone, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		session_id = excluded.session_id,
+		session_name = CASE WHEN excluded.session_name != '' THEN excluded.session_name ELSE call_records.session_name END,
+		session_phone = CASE WHEN excluded.session_phone != '' THEN excluded.session_phone ELSE call_records.session_phone END,
 		direction = excluded.direction,
 		peer = excluded.peer,
 		peer_name = CASE WHEN excluded.peer_name != '' THEN excluded.peer_name ELSE call_records.peer_name END,
@@ -125,7 +133,7 @@ func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
 	`
 
 	_, err := cs.db.ExecContext(ctx, query,
-		rec.CallID, rec.SessionID, rec.Direction, rec.Peer, rec.Name, rec.PictureURL,
+		rec.CallID, rec.SessionID, rec.SessionName, rec.SessionPhone, rec.Direction, rec.Peer, rec.Name, rec.PictureURL,
 		ownerStr, string(rec.Status), rec.StartedAt, connectedAt, endedAt, durationSec, rec.EndReason,
 	)
 	return err
@@ -163,9 +171,9 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 		args = append(args, filter.EndDate)
 	}
 	if filter.Search != "" {
-		whereClause = append(whereClause, "(peer LIKE ? OR peer_name LIKE ?)")
+		whereClause = append(whereClause, "(peer LIKE ? OR peer_name LIKE ? OR session_name LIKE ? OR session_phone LIKE ?)")
 		searchTerm := "%" + filter.Search + "%"
-		args = append(args, searchTerm, searchTerm)
+		args = append(args, searchTerm, searchTerm, searchTerm, searchTerm)
 	}
 
 	whereStmt := strings.Join(whereClause, " AND ")
@@ -188,7 +196,7 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	offset := (page - 1) * limit
 
 	query := fmt.Sprintf(`
-		SELECT id, session_id, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
+		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
 		FROM call_records
 		WHERE %s
 		ORDER BY started_at DESC
@@ -210,7 +218,7 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 		var connAt, endAt sql.NullInt64
 
 		err := rows.Scan(
-			&r.CallID, &r.SessionID, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
+			&r.CallID, &r.SessionID, &r.SessionName, &r.SessionPhone, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
 			&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
 		)
 		if err != nil {

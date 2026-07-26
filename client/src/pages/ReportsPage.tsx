@@ -320,6 +320,7 @@ export const ReportsPage = () => {
             <thead className="bg-muted/50 border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-semibold">
               <tr>
                 <th className="py-3 px-4">Contato / Cliente</th>
+                <th className="py-3 px-4">Linha Plataforma</th>
                 <th className="py-3 px-4">Direção</th>
                 <th className="py-3 px-4">Agente</th>
                 <th className="py-3 px-4">Horário</th>
@@ -330,14 +331,14 @@ export const ReportsPage = () => {
             <tbody className="divide-y divide-border/50">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
                     Carregando histórico de ligações...
                   </td>
                 </tr>
               ) : history.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <PhoneCall className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhuma chamada registrada para os filtros selecionados.
                   </td>
@@ -377,15 +378,23 @@ export const ReportsPage = () => {
                         </div>
                       </td>
 
+                      {/* Linha Plataforma */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-xs text-foreground">{call.sessionName || "WhatsApp"}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">{call.sessionPhone || call.sessionId.slice(0, 8)}</span>
+                        </div>
+                      </td>
+
                       {/* Direção */}
                       <td className="py-3 px-4">
                         {isOutbound ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-md">
-                            <PhoneOutgoing className="w-3 h-3" /> Saída
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md">
+                            <PhoneOutgoing className="w-3 h-3 text-rose-500" /> Saída
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-                            <PhoneIncoming className="w-3 h-3" /> Entrada
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                            <PhoneIncoming className="w-3 h-3 text-emerald-500" /> Entrada
                           </span>
                         )}
                       </td>

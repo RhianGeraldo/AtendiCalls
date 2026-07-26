@@ -10,7 +10,6 @@ import (
 
 	"atendicalls/internal/voip/core"
 
-	"go.mau.fi/whatsmeow"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -232,14 +231,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	peer := resp[0].JID
-	name := ""
-	if resp[0].VerifiedName != nil && resp[0].VerifiedName.Details != nil {
-		name = resp[0].VerifiedName.Details.GetVerifiedName()
-	}
-	pictureURL := ""
-	if pic, err := sess.client.GetProfilePictureInfo(r.Context(), peer, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
-		pictureURL = pic.URL
-	}
+	name, pictureURL := sess.resolveContactInfo(r.Context(), peer)
 	s.log.Info("resolved target JID for call", "input", body.Phone, "resolved_jid", peer.String(), "name", name, "picture_url", pictureURL)
 
 	callID, err := sess.startOutgoing(r.Context(), peer, false)
@@ -248,7 +240,8 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.broker.upsertCall(CallRecord{
-		SessionID: sess.id, CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.String(),
+		SessionID: sess.id, SessionName: sess.name, SessionPhone: sess.getOwnPhone(),
+		CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.ToNonAD().String(),
 		Name: name, PictureURL: pictureURL, StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": callID, "peer": peer.String(), "name": name, "pictureUrl": pictureURL}})

@@ -58,6 +58,47 @@ func (s *Session) createCall(callID string) *call.CallManager {
 	return cm
 }
 
+func (s *Session) getOwnPhone() string {
+	if s.client != nil && s.client.Store != nil && s.client.Store.ID != nil {
+		return s.client.Store.ID.User
+	}
+	return ""
+}
+
+func (s *Session) resolveContactInfo(ctx context.Context, peerJid types.JID) (string, string) {
+	name := ""
+	pictureURL := ""
+
+	if s.client != nil && s.client.Store != nil && s.client.Store.Contacts != nil {
+		if ci, err := s.client.Store.Contacts.GetContact(ctx, peerJid); err == nil && ci.Found {
+			if ci.FullName != "" {
+				name = ci.FullName
+			} else if ci.PushName != "" {
+				name = ci.PushName
+			} else if ci.BusinessName != "" {
+				name = ci.BusinessName
+			}
+		}
+	}
+
+	if name == "" {
+		phone := peerJid.User
+		if phone != "" {
+			if resp, err := s.client.IsOnWhatsApp(ctx, []string{phone}); err == nil && len(resp) > 0 && resp[0].IsIn {
+				if resp[0].VerifiedName != nil && resp[0].VerifiedName.Details != nil {
+					name = resp[0].VerifiedName.Details.GetVerifiedName()
+				}
+			}
+		}
+	}
+
+	if pic, err := s.client.GetProfilePictureInfo(ctx, peerJid, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
+		pictureURL = pic.URL
+	}
+
+	return name, pictureURL
+}
+
 func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	cm.OnIncoming = func(c *call.CallInfo) {
 		displayPeer := c.PeerJid
@@ -69,33 +110,17 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 
 		if peerJid.Server == types.HiddenUserServer {
 			pn, err := s.client.Store.LIDs.GetPNForLID(context.Background(), peerJid)
-			if err != nil {
-				s.log.Error("GetPNForLID failed", "err", err, "lid", peerJid)
-			} else if pn.IsEmpty() {
-				s.log.Warn("GetPNForLID returned empty", "lid", peerJid)
-			} else {
-				s.log.Info("GetPNForLID succeeded", "lid", peerJid, "pn", pn)
+			if err == nil && !pn.IsEmpty() {
 				peerJid = pn
 				displayPeer = peerJid.ToNonAD().String()
 			}
 		}
 
-		name := ""
-		if ci, err := s.client.Store.Contacts.GetContact(context.Background(), peerJid); err == nil && ci.Found {
-			if ci.PushName != "" {
-				name = ci.PushName
-			} else if ci.FullName != "" {
-				name = ci.FullName
-			}
-		}
-
-		pictureURL := ""
-		if pic, err := s.client.GetProfilePictureInfo(context.Background(), peerJid, &whatsmeow.GetProfilePictureParams{Preview: true}); err == nil && pic != nil {
-			pictureURL = pic.URL
-		}
+		name, pictureURL := s.resolveContactInfo(context.Background(), peerJid)
 
 		s.mgr.broker.upsertCall(CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: "inbound", Peer: displayPeer,
+			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(),
+			CallID: c.CallID, Direction: "inbound", Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 			Name: name, PictureURL: pictureURL,
 		})
@@ -113,26 +138,35 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		}
 
 		displayPeer := c.PeerJid
-		if c.CallCreator != "" {
+		if c.Direction == core.CallDirectionIncoming && c.CallCreator != "" {
 			displayPeer = c.CallCreator
 		}
 
 		peerJid, _ := types.ParseJID(displayPeer)
 		if peerJid.Server == types.HiddenUserServer {
 			pn, err := s.client.Store.LIDs.GetPNForLID(context.Background(), peerJid)
-			if err != nil {
-				s.log.Error("GetPNForLID failed in state change", "err", err, "lid", peerJid)
-			} else if pn.IsEmpty() {
-				s.log.Warn("GetPNForLID returned empty in state change", "lid", peerJid)
-			} else {
+			if err == nil && !pn.IsEmpty() {
+				peerJid = pn
 				displayPeer = pn.ToNonAD().String()
 			}
 		}
 
 		existing, _ := s.mgr.broker.getCall(c.CallID)
+		name := ""
+		pictureURL := ""
+		if existing != nil {
+			name = existing.Name
+			pictureURL = existing.PictureURL
+		}
+		if name == "" {
+			name, pictureURL = s.resolveContactInfo(context.Background(), peerJid)
+		}
+
 		rec := CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: displayPeer,
+			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(),
+			CallID: c.CallID, Direction: dir, Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: mapStatus(c.StateData.State),
+			Name: name, PictureURL: pictureURL,
 		}
 		if existing != nil {
 			rec.Owner = existing.Owner
