@@ -298,15 +298,39 @@ export const CampaignRunnerModal = () => {
                   })}
                 </div>
 
-                {/* 2. STAGE TITLE BAR */}
+                {/* 2. STAGE TITLE & NAVIGATION BAR */}
                 {currentStage && (
                   <div className="flex items-center justify-between bg-muted/40 px-3 py-1.5 rounded-lg border border-border/60 shrink-0">
-                    <span className="font-extrabold text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5" /> {currentStage.title}
+                    <span className="font-extrabold text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 truncate">
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" /> {currentStage.title}
                     </span>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      Etapa {activeStageIdx + 1} de {parsedPb.stages.length}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span className="text-[10px] text-muted-foreground font-mono bg-background px-2 py-0.5 rounded-full border border-border/40">
+                        {activeStageIdx + 1} / {parsedPb.stages.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          disabled={activeStageIdx === 0}
+                          onClick={() => setActiveStageIdx((i) => Math.max(0, i - 1))}
+                          className="w-6 h-6 rounded-full bg-background"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          disabled={activeStageIdx === parsedPb.stages.length - 1}
+                          onClick={() => setActiveStageIdx((i) => Math.min(parsedPb.stages.length - 1, i + 1))}
+                          className="w-6 h-6 rounded-full bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -351,29 +375,6 @@ export const CampaignRunnerModal = () => {
                       </div>
                     )}
 
-                    {/* Stage Navigation Footer */}
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border shrink-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={activeStageIdx === 0}
-                        onClick={() => setActiveStageIdx((i) => Math.max(0, i - 1))}
-                        className="text-xs gap-1 h-8"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" /> Etapa Anterior
-                      </Button>
-
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={activeStageIdx === parsedPb.stages.length - 1}
-                        onClick={() => setActiveStageIdx((i) => Math.min(parsedPb.stages.length - 1, i + 1))}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1 font-bold h-8"
-                      >
-                        Próxima Etapa <ChevronRight className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
                   </div>
                 )}
               </div>
