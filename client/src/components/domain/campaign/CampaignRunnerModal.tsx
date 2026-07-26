@@ -190,7 +190,7 @@ export const CampaignRunnerModal = () => {
   return (
     <Dialog open={isOpen} onOpenChange={closeRunner}>
       {/* FIXED DIALOG CONTAINER WITH SINGLE DEFAULT CLOSE BUTTON */}
-      <DialogContent className="max-w-5xl h-[620px] max-h-[90vh] p-0 overflow-hidden border-border bg-card shadow-2xl flex flex-col justify-between">
+      <DialogContent className="max-w-5xl h-[680px] max-h-[95vh] p-0 overflow-hidden border-border bg-card shadow-2xl flex flex-col justify-between">
         {/* Top Header Bar */}
         <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between gap-4 shrink-0 pr-10">
           <div className="flex items-center gap-3 min-w-0">
