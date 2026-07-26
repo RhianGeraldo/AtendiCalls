@@ -4,6 +4,7 @@ export type CallSummary = {
   sessionId: string;
   sessionName?: string;
   sessionPhone?: string;
+  sessionPictureUrl?: string;
   callId: string;
   owner: string | null;
   direction: "outbound" | "inbound";
@@ -23,6 +24,7 @@ export type CallHistoryItem = {
   sessionId: string;
   sessionName?: string;
   sessionPhone?: string;
+  sessionPictureUrl?: string;
   callId: string;
   owner: string | null;
   direction: "outbound" | "inbound";

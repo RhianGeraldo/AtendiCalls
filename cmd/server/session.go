@@ -65,6 +65,12 @@ func (s *Session) getOwnPhone() string {
 	return ""
 }
 
+func (s *Session) getOwnPictureURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pictureURL
+}
+
 func (s *Session) resolveContactInfo(ctx context.Context, peerJid types.JID) (string, string) {
 	name := ""
 	pictureURL := ""
@@ -119,7 +125,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		name, pictureURL := s.resolveContactInfo(context.Background(), peerJid)
 
 		s.mgr.broker.upsertCall(CallRecord{
-			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(),
+			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(), SessionPictureURL: s.getOwnPictureURL(),
 			CallID: c.CallID, Direction: "inbound", Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 			Name: name, PictureURL: pictureURL,
@@ -163,7 +169,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		}
 
 		rec := CallRecord{
-			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(),
+			SessionID: s.id, SessionName: s.name, SessionPhone: s.getOwnPhone(), SessionPictureURL: s.getOwnPictureURL(),
 			CallID: c.CallID, Direction: dir, Peer: displayPeer,
 			StartedAt: time.Now().UnixMilli(), Status: mapStatus(c.StateData.State),
 			Name: name, PictureURL: pictureURL,

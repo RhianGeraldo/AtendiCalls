@@ -240,7 +240,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.broker.upsertCall(CallRecord{
-		SessionID: sess.id, SessionName: sess.name, SessionPhone: sess.getOwnPhone(),
+		SessionID: sess.id, SessionName: sess.name, SessionPhone: sess.getOwnPhone(), SessionPictureURL: sess.getOwnPictureURL(),
 		CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.ToNonAD().String(),
 		Name: name, PictureURL: pictureURL, StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 	})
