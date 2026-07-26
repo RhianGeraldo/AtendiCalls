@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { PhoneOff, PhoneIncoming, PhoneOutgoing, User as UserIcon, Mic, Volume2 } from "lucide-react";
+import { PhoneOff, PhoneIncoming, PhoneOutgoing, User as UserIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { attachMeter } from "@/lib/audio-meter";
 import { useCalls } from "@/stores/calls";
 import { useDevices } from "@/stores/devices";
 import { useSessions } from "@/stores/sessions";
@@ -12,36 +11,12 @@ import { useEndCall } from "@/hooks/useEndCall";
 import { formatCallDuration } from "@/utils/format";
 import type { CallSummary } from "@/types/call";
 
-const Meter = ({ label, db, icon }: { label: string; db: number; icon: React.ReactNode }) => {
-  const pct = Math.max(0, Math.min(100, Math.round(((db + 60) / 60) * 100)));
-  return (
-    <div className="space-y-1 flex-1 min-w-0">
-      <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-        <span className="flex items-center gap-1">
-          {icon} {label}
-        </span>
-        <span className="font-mono text-[10px]">{pct}%</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full transition-all duration-150 rounded-full ${
-            pct > 75 ? "bg-amber-500" : pct > 30 ? "bg-emerald-500" : "bg-emerald-500/40"
-          }`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-};
-
 export const CallCard = ({ call }: { call: CallSummary }) => {
   const conn = useCalls((s) => s.ownConnections.get(call.callId));
   const sessions = useSessions((s) => s.sessions);
   const outDeviceId = useDevices((s) => s.outId);
   const endCall = useEndCall();
   const [, force] = useState(0);
-  const [micDb, setMicDb] = useState(-60);
-  const [peerDb, setPeerDb] = useState(-60);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const isConnected = call.connectedAt || call.status === "connected";
@@ -60,19 +35,14 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
 
   useEffect(() => {
     if (!conn) return;
-    const offMic = attachMeter(conn.micStream, setMicDb);
-    let offPeer: (() => void) | null = null;
     const wait = setInterval(() => {
       if (conn.remoteStream && audioRef.current) {
         audioRef.current.srcObject = conn.remoteStream;
         audioRef.current.play().catch(() => {});
-        offPeer = attachMeter(conn.remoteStream, setPeerDb);
         clearInterval(wait);
       }
     }, 200);
     return () => {
-      offMic();
-      offPeer?.();
       clearInterval(wait);
     };
   }, [conn]);
@@ -179,13 +149,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
           </div>
         </div>
 
-        {/* Audio Meters */}
-        <div className="flex items-center gap-4 pt-1">
-          <Meter label="Microfone" db={micDb} icon={<Mic className="w-3 h-3 text-emerald-500" />} />
-          <Meter label="Áudio Cliente" db={peerDb} icon={<Volume2 className="w-3 h-3 text-blue-500" />} />
-        </div>
-
-        <audio ref={audioRef} autoPlay />
+        <audio ref={audioRef} autoPlay className="hidden" />
       </CardContent>
     </Card>
   );
