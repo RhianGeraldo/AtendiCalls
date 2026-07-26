@@ -624,41 +624,83 @@ export const CampaignsPage = () => {
           )}
 
           {/* Wizard Step 3: Roteiro / Playbook do Vendedor */}
-          {step === 3 && (
-            <div className="space-y-3 py-2">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-foreground">Carregar Playbook Salvo (Opcional)</label>
-                  <Button variant="ghost" size="sm" onClick={handleSaveCurrentPlaybook} className="text-xs text-emerald-600 h-6 gap-1">
-                    <BookmarkPlus className="w-3.5 h-3.5" /> Salvar este Roteiro
-                  </Button>
+          {step === 3 && (() => {
+            const parsedFormPb = parsePlaybookContent(formPlaybook);
+            const isStages = parsedFormPb.mode === "stages";
+
+            return (
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Carregar Playbook Salvo (Opcional)</label>
+                    {!isStages && (
+                      <Button variant="ghost" size="sm" onClick={handleSaveCurrentPlaybook} className="text-xs text-emerald-600 h-6 gap-1">
+                        <BookmarkPlus className="w-3.5 h-3.5" /> Salvar este Roteiro
+                      </Button>
+                    )}
+                  </div>
+
+                  <select
+                    value={selectedPlaybookId}
+                    onChange={(e) => handleSelectSavedPlaybook(e.target.value)}
+                    className="w-full p-2.5 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                  >
+                    <option value="">-- Roteiro Livre Padrão (Ou selecione da biblioteca) --</option>
+                    {playbooks.map((pb) => (
+                      <option key={pb.id} value={pb.id}>
+                        📖 {pb.title} {pb.category ? `[${pb.category}]` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <select
-                  value={selectedPlaybookId}
-                  onChange={(e) => handleSelectSavedPlaybook(e.target.value)}
-                  className="w-full p-2.5 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  <option value="">-- Roteiro Padrão (Ou selecione da biblioteca) --</option>
-                  {playbooks.map((pb) => (
-                    <option key={pb.id} value={pb.id}>
-                      📖 {pb.title} {pb.category ? `[${pb.category}]` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                {isStages ? (
+                  /* VISUAL STAGES PREVIEW CARD (NO JSON SHOWN!) */
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-emerald-500" />
+                        Visualização do Playbook por Etapas
+                      </label>
+                      <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-bold">
+                        🎯 {parsedFormPb.stages.length} Etapas Interativas
+                      </Badge>
+                    </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground">Conteúdo do Roteiro / Pitch do Vendedor *</label>
-                <textarea
-                  rows={8}
-                  value={formPlaybook}
-                  onChange={(e) => setFormPlaybook(e.target.value)}
-                  className="w-full p-3 text-xs font-sans leading-relaxed rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+                    <div className="max-h-60 overflow-y-auto space-y-2 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
+                      {parsedFormPb.stages.map((stg, idx) => (
+                        <div key={idx} className="p-2.5 rounded-lg border border-border bg-card space-y-1 shadow-xs">
+                          <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            <span>{stg.title}</span>
+                            {stg.objections && stg.objections.length > 0 && (
+                              <span className="text-[10px] text-amber-500 font-mono">
+                                ⚡ {stg.objections.length} objeções prontas
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-foreground font-sans line-clamp-2 leading-relaxed">
+                            {stg.script}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* PLAIN TEXT AREA */
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground">Conteúdo do Roteiro / Pitch do Vendedor *</label>
+                    <textarea
+                      rows={8}
+                      value={formPlaybook}
+                      onChange={(e) => setFormPlaybook(e.target.value)}
+                      placeholder="Digite o texto do roteiro..."
+                      className="w-full p-3 text-xs font-sans leading-relaxed rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Wizard Footer Controls */}
           <DialogFooter className="pt-2 flex items-center justify-between">
