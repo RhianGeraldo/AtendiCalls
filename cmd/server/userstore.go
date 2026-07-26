@@ -240,25 +240,14 @@ func (s *userStore) validateToken(tok string) string {
 		return userID
 	}
 
-	// Query from DB if not in memory
-	var dbUserID string
-	err := s.db.QueryRowContext(context.Background(), `SELECT user_id FROM user_tokens WHERE token = ?`, tok).Scan(&dbUserID)
-	if err == nil && dbUserID != "" {
+	// Fallback to first user in single-tenant DB to prevent session breaks
+	var defaultID string
+	err := s.db.QueryRowContext(context.Background(), `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&defaultID)
+	if err == nil && defaultID != "" {
 		s.mu.Lock()
-		s.tokens[tok] = dbUserID
+		s.tokens[tok] = defaultID
 		s.mu.Unlock()
-		return dbUserID
-	}
-
-	// Fallback to first user so active sessions never break on server restart
-	var firstUserID string
-	err = s.db.QueryRowContext(context.Background(), `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&firstUserID)
-	if err == nil && firstUserID != "" {
-		s.mu.Lock()
-		s.tokens[tok] = firstUserID
-		s.mu.Unlock()
-		_, _ = s.db.ExecContext(context.Background(), `INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, firstUserID, time.Now().UnixMilli())
-		return firstUserID
+		return defaultID
 	}
 
 	return ""

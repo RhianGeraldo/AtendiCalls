@@ -116,6 +116,7 @@ export const CampaignsPage = () => {
   };
 
   const handleOpenPlaybookLibrary = () => {
+    fetchPlaybooks();
     setPlaybookLibraryOpen(true);
   };
 
@@ -265,6 +266,8 @@ export const CampaignsPage = () => {
   };
 
   const handleOpenCreateModal = () => {
+    fetchPlaybooks();
+    fetchContactsForSelection();
     setFormName("");
     setFormSessionId(activeSessions[0]?.id || "");
     setSelectedContactIds(availableContacts.map((c) => c.id)); // Select all by default
