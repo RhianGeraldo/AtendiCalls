@@ -11,7 +11,6 @@ import {
   PhoneMissed, 
   XOctagon, 
   ListOrdered,
-  X,
   FileText,
   AlertTriangle,
   ChevronDown
@@ -90,7 +89,7 @@ export const CampaignReportModal = ({ campaignId, onClose }: CampaignReportModal
       else if (it.status === "rejected") rejected++;
       else if (it.status === "failed") failed++;
 
-      if (it.notes) {
+      if (it.status === "answered" && it.notes) {
         const matches = [...it.notes.matchAll(/\[Atingiu:\s*(.+?)\]/g)];
         if (matches.length > 0) {
           const lastMatch = matches[matches.length - 1];
@@ -153,11 +152,7 @@ export const CampaignReportModal = ({ campaignId, onClose }: CampaignReportModal
               )}
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
-            <X className="w-4 h-4" />
-          </Button>
         </div>
-
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5 bg-background">
           {loading ? (
