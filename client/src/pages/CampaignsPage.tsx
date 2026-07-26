@@ -17,6 +17,7 @@ import type { Contact } from "@/types/contact";
 import type { Playbook } from "@/types/playbook";
 import { parsePlaybookContent, serializePlaybookContent, PlaybookStage } from "@/types/playbook";
 import { CampaignReportModal } from "@/components/domain/campaign/CampaignReportModal";
+import { formatPhoneBR } from "@/utils/format";
 
 export const CampaignsPage = () => {
   const sessions = useSessions((s) => s.sessions);
@@ -440,9 +441,18 @@ export const CampaignsPage = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1">
                       <h4 className="font-extrabold text-base text-foreground leading-tight">{cmp.name}</h4>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-                        <span>{sess?.name || cmp.sessionName || "Linha WhatsApp"}</span>
+                      <div className="flex items-center gap-2 mt-2">
+                        {sess?.pictureUrl ? (
+                          <img src={sess.pictureUrl} alt="Session" className="w-5 h-5 rounded-full" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                            <Smartphone className="w-3 h-3 text-blue-500" />
+                          </div>
+                        )}
+                        <span className="text-xs text-muted-foreground font-medium truncate">
+                          {sess?.name || cmp.sessionName || "Linha WhatsApp"}
+                          {sess?.phone ? ` • ${formatPhoneBR(sess.phone)}` : ""}
+                        </span>
                       </div>
                     </div>
 
