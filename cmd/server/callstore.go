@@ -43,16 +43,31 @@ type AgentMetric struct {
 }
 
 type SessionMetric struct {
-	SessionID  string `json:"sessionId"`
-	TotalCalls int    `json:"totalCalls"`
-	Completed  int    `json:"completedCalls"`
-	Missed     int    `json:"missedCalls"`
+	SessionID         string  `json:"sessionId"`
+	SessionName       string  `json:"sessionName"`
+	SessionPhone      string  `json:"sessionPhone"`
+	SessionPictureURL string  `json:"sessionPictureUrl"`
+	TotalCalls        int     `json:"totalCalls"`
+	Completed         int     `json:"completedCalls"`
+	Missed            int     `json:"missedCalls"`
+	AvgDuration       int64   `json:"avgDurationSec"`
+	AnswerRate        float64 `json:"answerRate"`
+}
+
+type DailyMetric struct {
+	Date           string `json:"date"`
+	TotalCalls     int    `json:"totalCalls"`
+	CompletedCalls int    `json:"completedCalls"`
+	InboundCount   int    `json:"inboundCount"`
+	OutboundCount  int    `json:"outboundCount"`
+	AvgDuration    int64  `json:"avgDurationSec"`
 }
 
 type CallAnalyticsResponse struct {
 	Summary   CallAnalyticsSummary `json:"summary"`
 	ByAgent   []AgentMetric        `json:"byAgent"`
 	BySession []SessionMetric      `json:"bySession"`
+	ByDaily   []DailyMetric        `json:"byDaily"`
 }
 
 type callStore struct {
@@ -349,9 +364,13 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	sessionQuery := fmt.Sprintf(`
 		SELECT 
 			session_id,
+			COALESCE(MAX(session_name), ''),
+			COALESCE(MAX(session_phone), ''),
+			COALESCE(MAX(session_picture_url), ''),
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN connected_at IS NULL THEN 1 ELSE 0 END), 0)
+			COALESCE(SUM(CASE WHEN connected_at IS NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
 		FROM call_records
 		WHERE %s
 		GROUP BY session_id
@@ -363,8 +382,42 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 		defer sessionRows.Close()
 		for sessionRows.Next() {
 			var sm SessionMetric
-			if err := sessionRows.Scan(&sm.SessionID, &sm.TotalCalls, &sm.Completed, &sm.Missed); err == nil {
+			var avgD float64
+			if err := sessionRows.Scan(&sm.SessionID, &sm.SessionName, &sm.SessionPhone, &sm.SessionPictureURL, &sm.TotalCalls, &sm.Completed, &sm.Missed, &avgD); err == nil {
+				sm.AvgDuration = int64(avgD)
+				if sm.TotalCalls > 0 {
+					sm.AnswerRate = float64(sm.Completed) / float64(sm.TotalCalls) * 100.0
+				}
 				res.BySession = append(res.BySession, sm)
+			}
+		}
+	}
+
+	// By Daily
+	dailyQuery := fmt.Sprintf(`
+		SELECT 
+			strftime('%%Y-%%m-%%d', datetime(started_at / 1000, 'unixepoch', 'localtime')) as call_date,
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END), 0),
+			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
+		FROM call_records
+		WHERE %s
+		GROUP BY call_date
+		ORDER BY call_date DESC
+		LIMIT 30
+	`, whereStmt)
+
+	dailyRows, err := cs.db.QueryContext(ctx, dailyQuery, args...)
+	if err == nil {
+		defer dailyRows.Close()
+		for dailyRows.Next() {
+			var dm DailyMetric
+			var avgD float64
+			if err := dailyRows.Scan(&dm.Date, &dm.TotalCalls, &dm.CompletedCalls, &dm.InboundCount, &dm.OutboundCount, &avgD); err == nil {
+				dm.AvgDuration = int64(avgD)
+				res.ByDaily = append(res.ByDaily, dm)
 			}
 		}
 	}
@@ -374,6 +427,9 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	}
 	if res.BySession == nil {
 		res.BySession = []SessionMetric{}
+	}
+	if res.ByDaily == nil {
+		res.ByDaily = []DailyMetric{}
 	}
 
 	return &res, nil

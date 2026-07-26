@@ -62,15 +62,30 @@ export type AgentMetric = {
 
 export type SessionMetric = {
   sessionId: string;
+  sessionName?: string;
+  sessionPhone?: string;
+  sessionPictureUrl?: string;
   totalCalls: number;
   completedCalls: number;
   missedCalls: number;
+  avgDurationSec: number;
+  answerRate: number;
+};
+
+export type DailyMetric = {
+  date: string;
+  totalCalls: number;
+  completedCalls: number;
+  inboundCount: number;
+  outboundCount: number;
+  avgDurationSec: number;
 };
 
 export type CallAnalyticsResponse = {
   summary: CallAnalyticsSummary;
   byAgent: AgentMetric[];
   bySession: SessionMetric[];
+  byDaily: DailyMetric[];
 };
 
 export type CallHistoryResponse = {
