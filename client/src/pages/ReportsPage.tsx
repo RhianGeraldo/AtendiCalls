@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { 
-  BarChart3, PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, 
+  PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, 
   Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, User as UserIcon
 } from "lucide-react";
 import { toast } from "sonner";
@@ -107,30 +107,19 @@ export const ReportsPage = () => {
   const summary = analytics?.summary;
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto w-full h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border/40 pb-5 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 text-foreground">
-            <BarChart3 className="w-7 h-7 text-emerald-500" />
-            Relatórios & Analytics de Chamadas
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Acompanhe o desempenho, volume de atendimento, duração e histórico detalhado das ligações.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Período Select */}
-          <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
-            <button
-              onClick={() => { setPeriod("today"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                period === "today" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Hoje
-            </button>
+    <div className="flex flex-col gap-5 p-6 max-w-7xl mx-auto w-full h-[calc(100vh-4rem)] overflow-hidden">
+      {/* Top Action Bar: Period Selector & Refresh */}
+      <div className="flex justify-end items-center gap-2 shrink-0">
+        {/* Período Select */}
+        <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+          <button
+            onClick={() => { setPeriod("today"); setPage(1); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              period === "today" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Hoje
+          </button>
             <button
               onClick={() => { setPeriod("7d"); setPage(1); }}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
@@ -161,7 +150,6 @@ export const ReportsPage = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
-      </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
