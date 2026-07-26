@@ -107,7 +107,7 @@ export const ReportsPage = () => {
   const summary = analytics?.summary;
 
   return (
-    <div className="flex flex-col gap-5 p-6 max-w-7xl mx-auto w-full h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="mx-auto max-w-7xl space-y-6 select-none w-full flex flex-col h-[calc(100vh-7rem)] overflow-hidden">
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         {/* Card 1: Total Chamadas */}
