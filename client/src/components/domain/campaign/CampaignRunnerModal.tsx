@@ -240,19 +240,21 @@ export const CampaignRunnerModal = () => {
             </div>
 
             {/* FULL-SIZE AUTHENTIC CELULAR VIRTUAL */}
-            <div className="flex-1 overflow-hidden">
-              <VirtualPhonePanel
-                sessionId={activeCampaign.sessionId}
-                phone={currentItem.phone}
-                contactName={currentItem.name}
-                pictureUrl={currentItem.pictureUrl}
-                isPaused={isPaused}
-                onResume={resumeRunner}
-                countdown={countdown}
-                onSkipCountdown={handleSkipCountdownNow}
-                autoDial={autoDial}
-                setAutoDial={setAutoDial}
-              />
+            <div className="flex-1 overflow-hidden flex items-center justify-center">
+              <div className="w-[340px] h-[550px] shrink-0">
+                <VirtualPhonePanel
+                  sessionId={activeCampaign.sessionId}
+                  phone={currentItem.phone}
+                  contactName={currentItem.name}
+                  pictureUrl={currentItem.pictureUrl}
+                  isPaused={isPaused}
+                  onResume={resumeRunner}
+                  countdown={countdown}
+                  onSkipCountdown={handleSkipCountdownNow}
+                  autoDial={autoDial}
+                  setAutoDial={setAutoDial}
+                />
+              </div>
             </div>
           </div>
 
