@@ -117,7 +117,7 @@ export const AppShell = ({
         </header>
 
         {/* MAIN CONTENT CONTAINER */}
-        <main className="flex-1 overflow-y-auto bg-background relative">
+        <main className="flex-1 overflow-y-auto bg-background p-6 relative">
           {children}
 
           {/* Floating Action Button - Celular Virtual */}
