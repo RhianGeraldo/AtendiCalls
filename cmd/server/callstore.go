@@ -264,11 +264,11 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	summaryQuery := fmt.Sprintf(`
 		SELECT 
 			COUNT(*),
-			SUM(CASE WHEN status = 'connected' OR status = 'ended' AND connected_at IS NOT NULL THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'ended' AND connected_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'rejected' OR end_reason LIKE '%%declined%%' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END),
+			COALESCE(SUM(CASE WHEN status = 'connected' OR (status = 'ended' AND connected_at IS NOT NULL) THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'ended' AND connected_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'rejected' OR end_reason LIKE '%%declined%%' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(duration_seconds), 0),
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0),
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN (connected_at - started_at) / 1000 END), 0)
@@ -305,7 +305,7 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 		SELECT 
 			COALESCE(NULLIF(owner, ''), 'Sem Agente') as agent,
 			COUNT(*),
-			SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END),
+			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(duration_seconds), 0),
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
 		FROM call_records
@@ -339,8 +339,8 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 		SELECT 
 			session_id,
 			COUNT(*),
-			SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END),
-			SUM(CASE WHEN connected_at IS NULL THEN 1 ELSE 0 END)
+			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN connected_at IS NULL THEN 1 ELSE 0 END), 0)
 		FROM call_records
 		WHERE %s
 		GROUP BY session_id
