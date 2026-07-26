@@ -1,9 +1,9 @@
 package call
 
 import (
+	"atendicalls/internal/voip/core"
 	"fmt"
 	"time"
-	"atendicalls/internal/voip/core"
 )
 
 type CallStateData struct {

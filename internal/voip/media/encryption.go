@@ -1,10 +1,10 @@
 package media
 
 import (
+	"atendicalls/internal/voip/core"
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
-	"atendicalls/internal/voip/core"
 )
 
 func DerivePerJidSrtpKey(callKey []byte, deviceJid string) (core.SrtpKeyingMaterial, error) {

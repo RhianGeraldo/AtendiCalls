@@ -1,15 +1,15 @@
 package call
 
 import (
-	"context"
-	"log/slog"
-	"sync"
-	"time"
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/media"
 	"atendicalls/internal/voip/signaling"
 	"atendicalls/internal/voip/transport"
 	"atendicalls/internal/voip/wanode"
+	"context"
+	"log/slog"
+	"sync"
+	"time"
 
 	"go.mau.fi/whatsmeow/types"
 )

@@ -1,8 +1,8 @@
 package call
 
 import (
-	"testing"
 	"atendicalls/internal/voip/core"
+	"testing"
 )
 
 func TestBuildRelayConfigs(t *testing.T) {

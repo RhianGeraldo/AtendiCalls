@@ -1,10 +1,10 @@
 package call
 
 import (
-	"time"
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/media"
 	"atendicalls/internal/voip/transport"
+	"time"
 )
 
 func (m *CallManager) initCodec() {

@@ -1,9 +1,9 @@
 package call
 
 import (
-	"strings"
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/wanode"
+	"strings"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
 )

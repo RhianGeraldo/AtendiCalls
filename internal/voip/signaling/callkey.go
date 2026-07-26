@@ -1,12 +1,12 @@
 package signaling
 
 import (
+	"atendicalls/internal/voip/core"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"atendicalls/internal/voip/core"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waE2E"

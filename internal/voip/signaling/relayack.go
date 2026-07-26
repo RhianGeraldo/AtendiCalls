@@ -1,11 +1,11 @@
 package signaling
 
 import (
+	"atendicalls/internal/voip/core"
+	"atendicalls/internal/voip/wanode"
 	"encoding/base64"
 	"sort"
 	"strconv"
-	"atendicalls/internal/voip/core"
-	"atendicalls/internal/voip/wanode"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
 )

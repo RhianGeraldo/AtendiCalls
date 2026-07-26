@@ -1,10 +1,10 @@
 package signaling
 
 import (
-	"context"
-	"fmt"
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/wanode"
+	"context"
+	"fmt"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/types"
