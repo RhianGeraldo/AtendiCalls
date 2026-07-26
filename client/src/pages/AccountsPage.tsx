@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Smartphone, Plus, Pencil, Trash2, Power, QrCode, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Power, QrCode, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,24 +99,14 @@ export const AccountsPage = () => {
   const selectedSession = sessions.find((s) => s.id === activeId) || sessions[0];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-2 select-none">
-      {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-muted/60 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Smartphone className="h-6 w-6 text-emerald-600 dark:text-emerald-400" /> Contas WhatsApp Conectadas
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Gerencie suas instâncias de WhatsApp, escaneie QR Codes e configure linhas de atendimento.
-          </p>
-        </div>
-
-        {isAdmin && (
+    <div className="mx-auto max-w-5xl space-y-6 select-none">
+      {isAdmin && (
+        <div className="flex justify-end items-center">
           <Button onClick={handleOpenCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
             <Plus className="h-4 w-4" /> Nova Sessão
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Grid of Accounts */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

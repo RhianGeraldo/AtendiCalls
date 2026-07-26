@@ -28,8 +28,8 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
     <div className="flex h-full flex-col justify-between p-3 select-none">
       <div className="space-y-4">
         {/* Top Logo Brand */}
-        <div className={cn("flex items-center gap-3 px-2 py-1", collapsed && "justify-center px-0")}>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20">
+        <div className={cn("flex items-center gap-3 px-1 py-1", collapsed && "justify-center px-0")}>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 mx-auto">
             <PhoneCall className="h-5 w-5" />
           </span>
           {!collapsed && (
@@ -41,7 +41,7 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
         </div>
 
         {/* Navigation Items */}
-        <nav className="space-y-1">
+        <nav className="space-y-1.5">
           {tabs.map((tab) => (
             <div
               key={tab.id}
@@ -50,15 +50,15 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
               title={collapsed ? tab.label : undefined}
               onClick={() => onNavigate(tab.id)}
               className={cn(
-                "flex cursor-pointer items-center rounded-xl text-sm font-medium transition-all duration-200",
-                collapsed ? "justify-center h-11 w-full" : "gap-3 px-3.5 py-2.5",
+                "flex cursor-pointer items-center rounded-xl text-sm font-medium transition-all duration-200 h-10",
+                collapsed ? "w-10 justify-center mx-auto px-0" : "gap-3 px-3 w-full justify-start",
                 activeTab === tab.id
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold shadow-xs"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
             >
               {tab.icon}
-              {!collapsed && <span className="truncate">{tab.label}</span>}
+              {!collapsed && <span className="truncate leading-none">{tab.label}</span>}
             </div>
           ))}
         </nav>
@@ -67,7 +67,7 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
       {/* Footer User Profile */}
       <div className="mt-auto border-t border-border/60 pt-3 space-y-2">
         <div className={cn("flex items-center gap-3 px-1", collapsed && "justify-center px-0")}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs border border-emerald-500/20 shadow-xs">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs border border-emerald-500/20 shadow-xs mx-auto">
             {user?.name?.slice(0, 2).toUpperCase() || "US"}
           </div>
           {!collapsed && (
@@ -83,12 +83,12 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
           size={collapsed ? "icon" : "default"}
           title={collapsed ? "Sair do Sistema" : undefined}
           className={cn(
-            "text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors",
-            collapsed ? "h-9 w-full justify-center" : "w-full justify-start gap-3 h-9 text-xs"
+            "text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors h-10",
+            collapsed ? "w-10 mx-auto justify-center" : "w-full justify-start gap-3 text-xs"
           )}
           onClick={logout}
         >
-          <LogOut className="h-4 w-4 shrink-0" />
+          <LogOut className="h-5 w-5 shrink-0" />
           {!collapsed && <span>Sair do Sistema</span>}
         </Button>
       </div>

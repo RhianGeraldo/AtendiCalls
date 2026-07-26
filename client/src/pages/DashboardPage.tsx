@@ -1,5 +1,4 @@
 import {
-  LayoutDashboard,
   PhoneCall,
   PhoneIncoming,
   PhoneOutgoing,
@@ -22,17 +21,7 @@ export const DashboardPage = () => {
   const completedCalls = calls.filter((c) => c.status === "ended");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-2 select-none">
-      {/* Top Title Bar */}
-      <div className="flex flex-col gap-1 border-b border-muted/60 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <LayoutDashboard className="h-6 w-6 text-emerald-600 dark:text-emerald-400" /> Dashboard de Métricas
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Visão geral do desempenho de chamadas, contas ativas e tráfego em tempo real.
-        </p>
-      </div>
-
+    <div className="mx-auto max-w-5xl space-y-6 select-none">
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Contas Ativas */}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, UserPlus, Shield, User as UserIcon, Loader2, Trash2, Key } from "lucide-react";
+import { UserPlus, Shield, User as UserIcon, Loader2, Trash2, Key } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,16 +100,8 @@ export const UsersPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-2 select-none">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-muted/60 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Users className="h-6 w-6 text-emerald-600 dark:text-emerald-400" /> Gestão de Usuários
-          </h1>
-          <p className="text-xs text-muted-foreground">Cadastre atendentes e gerencie funções (Administrador vs Operador).</p>
-        </div>
-
+    <div className="mx-auto max-w-4xl space-y-6 select-none">
+      <div className="flex justify-end items-center">
         <Button onClick={() => setIsCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
           <UserPlus className="h-4 w-4" /> Novo Usuário
         </Button>
