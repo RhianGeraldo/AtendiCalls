@@ -382,11 +382,19 @@ export const CampaignRunnerModal = () => {
                 >
                   <ChevronRight className="w-4 h-4" /> Pular Delay de {countdown}s & Discar Próximo
                 </Button>
+              ) : isPaused ? (
+                /* PAUSED / INITIAL START BUTTON */
+                <Button
+                  onClick={resumeRunner}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold gap-2 py-5 text-xs shadow-lg rounded-xl"
+                >
+                  <Play className="w-4 h-4 fill-white" /> Iniciar Disparo de Ligações
+                </Button>
               ) : (
                 /* IDLE DIAL BUTTON */
                 <Button
                   onClick={handleDialCurrentItem}
-                  disabled={isPaused || startCallMutation.isPending}
+                  disabled={startCallMutation.isPending}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 py-5 text-xs shadow-md rounded-xl"
                 >
                   <Phone className="w-4 h-4" />

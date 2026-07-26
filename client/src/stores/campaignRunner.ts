@@ -42,7 +42,7 @@ export const useCampaignRunner = create<CampaignRunnerState>((set, get) => ({
       activeCampaign: campaign,
       currentIndex: startIndex,
       isOpen: true,
-      isPaused: false,
+      isPaused: true, // Require seller to click Iniciar Campanha before dialing starts
       countdown: 0,
       callState: "idle",
       notes: "",
