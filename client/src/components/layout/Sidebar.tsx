@@ -1,9 +1,9 @@
-import { LayoutDashboard, Phone, Smartphone, Users, LogOut, BarChart3, PhoneCall } from "lucide-react";
+import { LayoutDashboard, Phone, Smartphone, Users, LogOut, BarChart3, PhoneCall, BookUser, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
-export type Tab = "dashboard" | "calls" | "reports" | "accounts" | "users";
+export type Tab = "dashboard" | "calls" | "reports" | "accounts" | "contacts" | "campaigns" | "users";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -18,7 +18,9 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
 
   const tabs = [
     { id: "dashboard" as Tab, label: "Dashboard", icon: <LayoutDashboard className="h-5 w-5 shrink-0" /> },
-    { id: "calls" as Tab, label: "Ligações", icon: <Phone className="h-5 w-5 shrink-0" /> },
+    { id: "calls" as Tab, label: "Chamadas Ao Vivo", icon: <Phone className="h-5 w-5 shrink-0" /> },
+    { id: "contacts" as Tab, label: "Contatos (CRM)", icon: <BookUser className="h-5 w-5 shrink-0" /> },
+    { id: "campaigns" as Tab, label: "Campanhas", icon: <Megaphone className="h-5 w-5 shrink-0" /> },
     { id: "reports" as Tab, label: "Relatórios", icon: <BarChart3 className="h-5 w-5 shrink-0" /> },
     { id: "accounts" as Tab, label: "Contas WhatsApp", icon: <Smartphone className="h-5 w-5 shrink-0" /> },
     ...(isAdmin ? [{ id: "users" as Tab, label: "Usuários", icon: <Users className="h-5 w-5 shrink-0" /> }] : []),

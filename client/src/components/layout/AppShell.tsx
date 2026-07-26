@@ -20,6 +20,14 @@ const PAGE_TITLES: Record<Tab, { title: string; subtitle: string }> = {
     title: "Relatórios & Analytics de Chamadas",
     subtitle: "Acompanhe o desempenho, volume de atendimento, duração e histórico detalhado das ligações.",
   },
+  contacts: {
+    title: "Gestão de Contatos (CRM)",
+    subtitle: "Cadastre leads, organize clientes e efetue discagem rápida em 1 clique.",
+  },
+  campaigns: {
+    title: "Campanhas de Ligações Sequenciais",
+    subtitle: "Crie disparos automatizados de voz com delay configurável e Playbook do Vendedor.",
+  },
   accounts: {
     title: "Contas WhatsApp",
     subtitle: "Gerencie instâncias conectadas e pareamento via QR Code.",

@@ -1,0 +1,466 @@
+import { useState, useEffect } from "react";
+import { 
+  Megaphone, Plus, Play, Trash2, RefreshCw, Smartphone, Users, Clock, ChevronRight
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { getCampaignsApi, createCampaignApi, deleteCampaignApi, getCampaignDetailsApi } from "@/services/campaigns";
+import { getContactsApi } from "@/services/contacts";
+import { useSessions } from "@/stores/sessions";
+import { useCampaignRunner } from "@/stores/campaignRunner";
+import type { Campaign } from "@/types/campaign";
+import type { Contact } from "@/types/contact";
+
+export const CampaignsPage = () => {
+  const sessions = useSessions((s) => s.sessions);
+  const startRunner = useCampaignRunner((s) => s.startRunner);
+
+  const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+
+  // Wizard Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [formName, setFormName] = useState("");
+  const [formSessionId, setFormSessionId] = useState("");
+  const [formPlaybook, setFormPlaybook] = useState(
+    "👋 PITCH DE VENDAS:\n- Olá, meu nome é [Agente] da equipe AtendiCalls!\n- Gostaria de apresentar nossa nova solução VoIP para WhatsApp.\n\n❓ QUALIFICAÇÃO DE LEAD:\n1. Quantas chamadas vocês realizam por dia?\n2. Já utilizam automação ou discador sequencial?\n\n💡 TRATAMENTO DE OBJEÇÕES:\n- Objeção 'Sem tempo': 'Prometo ser breve, apenas 2 minutos!'\n- Objeção 'Preço': 'Temos planos escaláveis para qualquer equipe.'"
+  );
+  const [formDelaySeconds, setFormDelaySeconds] = useState(5);
+  const [availableContacts, setAvailableContacts] = useState<Contact[]>([]);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const activeSessions = sessions.filter((s) => s.paired);
+
+  const fetchCampaigns = async () => {
+    setLoading(true);
+    try {
+      const data = await getCampaignsApi();
+      setCampaigns(data);
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao carregar campanhas.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchContactsForSelection = async () => {
+    try {
+      const res = await getContactsApi({ limit: 200 });
+      setAvailableContacts(res.contacts);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchCampaigns();
+    fetchContactsForSelection();
+  }, []);
+
+  const handleOpenCreateModal = () => {
+    setFormName("");
+    setFormSessionId(activeSessions[0]?.id || "");
+    setSelectedContactIds(availableContacts.map((c) => c.id)); // Select all by default
+    setFormDelaySeconds(5);
+    setStep(1);
+    setModalOpen(true);
+  };
+
+  const handleToggleSelectContact = (id: string) => {
+    setSelectedContactIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllContacts = () => {
+    if (selectedContactIds.length === availableContacts.length) {
+      setSelectedContactIds([]);
+    } else {
+      setSelectedContactIds(availableContacts.map((c) => c.id));
+    }
+  };
+
+  const handleCreateCampaign = async () => {
+    if (!formName.trim() || !formSessionId || selectedContactIds.length === 0) {
+      toast.error("Preencha todos os campos e selecione ao menos 1 contato.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const selectedContacts = availableContacts.filter((c) => selectedContactIds.includes(c.id));
+      const itemsPayload = selectedContacts.map((c) => ({
+        contactId: c.id,
+        name: c.name,
+        phone: c.phone,
+        pictureUrl: c.pictureUrl,
+      }));
+
+      await createCampaignApi({
+        name: formName,
+        sessionId: formSessionId,
+        playbook: formPlaybook,
+        delaySeconds: formDelaySeconds,
+        items: itemsPayload,
+      });
+
+      toast.success("Campanha criada com sucesso!");
+      setModalOpen(false);
+      fetchCampaigns();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao criar campanha.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStartCampaign = async (cmpId: string) => {
+    try {
+      const fullCmp = await getCampaignDetailsApi(cmpId);
+      startRunner(fullCmp);
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao iniciar campanha.");
+    }
+  };
+
+  const handleDeleteCampaign = async (id: string, name: string) => {
+    if (!confirm(`Excluir a campanha "${name}"?`)) return;
+    try {
+      await deleteCampaignApi(id);
+      toast.success("Campanha excluída.");
+      fetchCampaigns();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao excluir campanha.");
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 select-none">
+      {/* Top KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Card 1: Total de Campanhas */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Total de Campanhas</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
+              <Megaphone className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-foreground">{campaigns.length}</span>
+            <span className="text-xs text-muted-foreground">criadas</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Disparos de ligações ativos</p>
+        </div>
+
+        {/* Card 2: Campanhas em Execução */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Rodando Agora</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+              <Play className="h-4 w-4 animate-pulse" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-amber-500">
+              {campaigns.filter((c) => c.status === "running").length}
+            </span>
+            <span className="text-xs text-muted-foreground">em tempo real</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Discagem automotiva 1 a 1</p>
+        </div>
+
+        {/* Card 3: Total Contatos Impactados */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Alcance Total</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+              <Users className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-blue-500">
+              {campaigns.reduce((sum, c) => sum + (c.totalItems || 0), 0)}
+            </span>
+            <span className="text-xs text-muted-foreground">contatos na fila</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Total de leads mapeados</p>
+        </div>
+      </div>
+
+      {/* Header & Create Campaign Button */}
+      <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card shadow-sm">
+        <div>
+          <h3 className="font-bold text-base text-foreground">Campanhas de Ligação Sequenciais</h3>
+          <p className="text-xs text-muted-foreground">Disparo automático 1 a 1 com delay de 5s e Playbook Comercial.</p>
+        </div>
+
+        <Button onClick={handleOpenCreateModal} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-xs">
+          <Plus className="w-4 h-4" /> Nova Campanha
+        </Button>
+      </div>
+
+      {/* Campaigns List */}
+      {loading ? (
+        <div className="py-16 text-center text-muted-foreground bg-card border border-border rounded-xl shadow-xs">
+          <RefreshCw className="w-7 h-7 animate-spin mx-auto mb-2 text-emerald-500" />
+          Carregando campanhas...
+        </div>
+      ) : campaigns.length === 0 ? (
+        <div className="py-16 text-center text-muted-foreground bg-card border border-dashed border-border rounded-xl shadow-xs flex flex-col items-center justify-center gap-2">
+          <Megaphone className="w-10 h-10 opacity-30 text-emerald-500" />
+          <h3 className="font-bold text-base text-foreground">Nenhuma campanha criada ainda</h3>
+          <p className="text-xs max-w-sm">Crie sua primeira campanha para discar sequencialmente para seus leads com Playbook ao vivo.</p>
+          <Button onClick={handleOpenCreateModal} variant="outline" className="mt-2 gap-2 text-emerald-600 border-emerald-500/30">
+            <Plus className="w-4 h-4" /> Criar Primeira Campanha
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {campaigns.map((cmp) => {
+            const sess = sessions.find((s) => s.id === cmp.sessionId);
+            const progress = cmp.totalItems > 0 ? Math.round((cmp.doneItems / cmp.totalItems) * 100) : 0;
+
+            return (
+              <div key={cmp.id} className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-4 hover:border-emerald-500/30 transition-all flex flex-col justify-between">
+                <div className="space-y-3">
+                  {/* Campaign Header & Status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <h4 className="font-extrabold text-base text-foreground leading-tight">{cmp.name}</h4>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Smartphone className="w-3.5 h-3.5 text-blue-500" />
+                        <span>{sess?.name || cmp.sessionName || "Linha WhatsApp"}</span>
+                      </div>
+                    </div>
+
+                    <Badge
+                      variant={
+                        cmp.status === "running"
+                          ? "success"
+                          : cmp.status === "completed"
+                          ? "outline"
+                          : cmp.status === "paused"
+                          ? "secondary"
+                          : "secondary"
+                      }
+                      className="text-[10px] capitalize shrink-0"
+                    >
+                      {cmp.status === "running"
+                        ? "Rodando"
+                        : cmp.status === "completed"
+                        ? "Concluída"
+                        : cmp.status === "paused"
+                        ? "Pausada"
+                        : "Pendente"}
+                    </Badge>
+                  </div>
+
+                  {/* Progress Bar & Stats */}
+                  <div className="space-y-1.5 pt-2 border-t border-border/50">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Progresso</span>
+                      <span className="font-mono font-bold text-foreground">
+                        {cmp.doneItems} / {cmp.totalItems} ({progress}%)
+                      </span>
+                    </div>
+
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Delay Tag */}
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Delay: {cmp.delaySeconds || 5}s entre chamadas</span>
+                  </div>
+                </div>
+
+                {/* Bottom Action Controls */}
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/60 mt-2">
+                  <Button
+                    onClick={() => handleStartCampaign(cmp.id)}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2 font-bold shadow-xs"
+                  >
+                    <Play className="w-3.5 h-3.5" /> Abrir Discador / Executar
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => handleDeleteCampaign(cmp.id, cmp.name)}
+                    className="h-9 w-9 text-rose-500 hover:bg-rose-500/10 border-rose-500/20 shrink-0"
+                    title="Excluir campanha"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Wizard Modal: Create New Campaign */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Megaphone className="w-5 h-5 text-emerald-500" />
+              Nova Campanha de Ligações (Passo {step} de 3)
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Wizard Step 1: Configurações Básicas */}
+          {step === 1 && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Nome da Campanha *</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Prospecção Clientes Vendas Julho"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Conta / Linha de WhatsApp *</label>
+                <select
+                  value={formSessionId}
+                  onChange={(e) => setFormSessionId(e.target.value)}
+                  className="w-full p-2.5 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {activeSessions.length === 0 ? (
+                    <option value="">Nenhuma conta de WhatsApp pareada!</option>
+                  ) : (
+                    activeSessions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.phone || s.id.slice(0, 8)})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Delay entre chamadas não atendidas (Segundos)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={formDelaySeconds}
+                  onChange={(e) => setFormDelaySeconds(parseInt(e.target.value) || 5)}
+                />
+                <p className="text-[11px] text-muted-foreground">Tempo de espera antes de discar para o próximo contato da lista (Padrão: 5s).</p>
+              </div>
+            </div>
+          )}
+
+          {/* Wizard Step 2: Seleção de Contatos */}
+          {step === 2 && (
+            <div className="space-y-3 py-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground">
+                  Selecionar Contatos ({selectedContactIds.length} selecionados de {availableContacts.length})
+                </label>
+                <Button variant="ghost" size="sm" onClick={handleSelectAllContacts} className="text-xs text-emerald-600 h-7">
+                  {selectedContactIds.length === availableContacts.length ? "Desmarcar Todos" : "Selecionar Todos"}
+                </Button>
+              </div>
+
+              {availableContacts.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-lg">
+                  Nenhum contato cadastrado. Cadastre contatos na aba Contatos primeiro!
+                </p>
+              ) : (
+                <div className="max-h-60 overflow-y-auto border border-border rounded-xl divide-y divide-border/50 bg-background">
+                  {availableContacts.map((c) => {
+                    const selected = selectedContactIds.includes(c.id);
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => handleToggleSelectContact(c.id)}
+                        className={`flex items-center justify-between p-2.5 cursor-pointer hover:bg-muted/40 transition-colors ${
+                          selected ? "bg-emerald-500/5" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => {}}
+                            className="rounded border-border text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span className="font-bold text-xs text-foreground">{c.name}</span>
+                          <span className="font-mono text-xs text-muted-foreground">({c.phone})</span>
+                        </div>
+                        {c.company && (
+                          <span className="text-[10px] bg-muted px-2 py-0.5 rounded text-muted-foreground">
+                            {c.company}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Wizard Step 3: Roteiro / Playbook do Vendedor */}
+          {step === 3 && (
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Roteiro / Playbook Comercial de Vendas</label>
+                <p className="text-[11px] text-muted-foreground">
+                  Este roteiro aparecerá na tela do vendedor ao vivo assim que o cliente atender a ligação.
+                </p>
+              </div>
+
+              <textarea
+                rows={8}
+                value={formPlaybook}
+                onChange={(e) => setFormPlaybook(e.target.value)}
+                className="w-full p-3 text-xs font-sans leading-relaxed rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          )}
+
+          {/* Wizard Footer Controls */}
+          <DialogFooter className="pt-2 flex items-center justify-between">
+            {step > 1 ? (
+              <Button variant="outline" onClick={() => setStep((s) => (s - 1) as any)}>
+                Voltar
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => setModalOpen(false)}>
+                Cancelar
+              </Button>
+            )}
+
+            {step < 3 ? (
+              <Button onClick={() => setStep((s) => (s + 1) as any)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1">
+                Avançar <ChevronRight className="w-4 h-4" />
+              </Button>
+            ) : (
+              <Button onClick={handleCreateCampaign} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                {submitting ? "Criando..." : "Criar & Lançar Campanha"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};

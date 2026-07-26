@@ -8,8 +8,11 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { ReportsPage } from "@/pages/ReportsPage";
+import { ContactsPage } from "@/pages/ContactsPage";
+import { CampaignsPage } from "@/pages/CampaignsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PhoneDialerModal } from "@/components/domain/call/PhoneDialerModal";
+import { CampaignRunnerModal } from "@/components/domain/campaign/CampaignRunnerModal";
 import { ensureSessionsWired } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useTheme } from "@/stores/theme";
@@ -43,11 +46,14 @@ export const App = () => {
       <AppShell activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === "dashboard" && <DashboardPage />}
         {activeTab === "calls" && <CallsPage />}
+        {activeTab === "contacts" && <ContactsPage />}
+        {activeTab === "campaigns" && <CampaignsPage />}
         {activeTab === "reports" && <ReportsPage />}
         {activeTab === "accounts" && <AccountsPage />}
         {activeTab === "users" && <UsersPage />}
       </AppShell>
       <PhoneDialerModal />
+      <CampaignRunnerModal />
       <Toaster theme={theme} position="top-right" richColors closeButton />
     </TooltipProvider>
   );

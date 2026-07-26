@@ -43,6 +43,20 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/users/{id}", s.handleUserUpdate)
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleUserDelete)
 
+	// Contact management routes
+	mux.HandleFunc("GET /api/contacts", s.handleContactList)
+	mux.HandleFunc("POST /api/contacts", s.handleContactCreate)
+	mux.HandleFunc("PUT /api/contacts/{id}", s.handleContactUpdate)
+	mux.HandleFunc("DELETE /api/contacts/{id}", s.handleContactDelete)
+
+	// Campaign management routes
+	mux.HandleFunc("GET /api/campaigns", s.handleCampaignList)
+	mux.HandleFunc("POST /api/campaigns", s.handleCampaignCreate)
+	mux.HandleFunc("GET /api/campaigns/{id}", s.handleCampaignGet)
+	mux.HandleFunc("PATCH /api/campaigns/{id}/status", s.handleCampaignStatusUpdate)
+	mux.HandleFunc("PATCH /api/campaigns/{id}/items/{itemId}", s.handleCampaignItemUpdate)
+	mux.HandleFunc("DELETE /api/campaigns/{id}", s.handleCampaignDelete)
+
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
 	if s.staticDir != "" {
@@ -571,4 +585,246 @@ func (s *server) handleCallAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, analytics)
+}
+
+// Contacts handlers
+func (s *server) handleContactList(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	q := r.URL.Query()
+	page := 1
+	limit := 50
+	if p := q.Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+	}
+	if l := q.Get("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+
+	filter := ContactFilter{
+		Search: q.Get("search"),
+		Page:   page,
+		Limit:  limit,
+	}
+
+	resp, err := s.contacts.List(r.Context(), filter)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *server) handleContactCreate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	var req Contact
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	if req.Name == "" || req.Phone == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Nome e Telefone são obrigatórios."})
+		return
+	}
+
+	c, err := s.contacts.Create(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func (s *server) handleContactUpdate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	var req Contact
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+	req.ID = id
+
+	c, err := s.contacts.Update(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, c)
+}
+
+func (s *server) handleContactDelete(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := s.contacts.Delete(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Contato excluído."})
+}
+
+// Campaign handlers
+func (s *server) handleCampaignList(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	list, err := s.campaigns.List(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, list)
+}
+
+type createCampaignReq struct {
+	Name         string         `json:"name"`
+	SessionID    string         `json:"sessionId"`
+	Playbook     string         `json:"playbook"`
+	DelaySeconds int            `json:"delaySeconds"`
+	Items        []CampaignItem `json:"items"`
+}
+
+func (s *server) handleCampaignCreate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	var req createCampaignReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	if req.Name == "" || req.SessionID == "" || len(req.Items) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Nome da campanha, Conta WhatsApp e Lista de Contatos são obrigatórios."})
+		return
+	}
+
+	cmp := Campaign{
+		Name:         req.Name,
+		SessionID:    req.SessionID,
+		Playbook:     req.Playbook,
+		DelaySeconds: req.DelaySeconds,
+	}
+
+	created, err := s.campaigns.Create(r.Context(), cmp, req.Items)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *server) handleCampaignGet(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	cmp, err := s.campaigns.GetByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Campanha não encontrada."})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cmp)
+}
+
+func (s *server) handleCampaignStatusUpdate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	var req struct {
+		Status CampaignStatus `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	if err := s.campaigns.UpdateStatus(r.Context(), id, req.Status); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Status da campanha atualizado."})
+}
+
+func (s *server) handleCampaignItemUpdate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	itemId := r.PathValue("itemId")
+	var req struct {
+		Status    CampaignItemStatus `json:"status"`
+		EndReason string             `json:"endReason"`
+		Notes     string             `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	if err := s.campaigns.UpdateItem(r.Context(), itemId, req.Status, req.EndReason, req.Notes); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Item da campanha atualizado."})
+}
+
+func (s *server) handleCampaignDelete(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := s.campaigns.Delete(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Campanha excluída."})
 }

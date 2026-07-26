@@ -15,6 +15,8 @@ type server struct {
 	sessions  *SessionManager
 	users     *userStore
 	calls     *callStore
+	contacts  *contactStore
+	campaigns *campaignStore
 	log       *slog.Logger
 	staticDir string
 }
@@ -48,6 +50,16 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	contactStore, err := newContactStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	campaignStore, err := newCampaignStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "INFO", true)
@@ -63,5 +75,14 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
-	return &server{broker: broker, sessions: mgr, users: userStore, calls: callStore, log: log, staticDir: staticDir}, nil
+	return &server{
+		broker:    broker,
+		sessions:  mgr,
+		users:     userStore,
+		calls:     callStore,
+		contacts:  contactStore,
+		campaigns: campaignStore,
+		log:       log,
+		staticDir: staticDir,
+	}, nil
 }
