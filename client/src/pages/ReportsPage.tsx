@@ -328,50 +328,54 @@ export const ReportsPage = () => {
 
                   return (
                     <tr key={call.callId} className="hover:bg-muted/30 transition-colors">
-                      {/* Contato com Avatar Redondo w-9 h-9 */}
+                      {/* Contato com Avatar Redondo h-10 w-10 */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          {call.pictureUrl ? (
-                            <img
-                              src={call.pictureUrl}
-                              alt={call.name || call.peer}
-                              className="w-9 h-9 rounded-full object-cover border border-border shadow-xs shrink-0"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs border border-emerald-500/20 shrink-0">
-                              {(call.name || call.peer || "?").charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-semibold text-foreground text-xs leading-tight">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden border border-border bg-muted/20 shadow-xs flex items-center justify-center">
+                            {call.pictureUrl ? (
+                              <img
+                                src={call.pictureUrl}
+                                alt={call.name || call.peer}
+                                className="h-full w-full rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs border border-emerald-500/20">
+                                {(call.name || call.peer || "?").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground text-xs leading-tight truncate">
                               {call.name || "Contato WhatsApp"}
                             </p>
-                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">
                               {call.peer.replace("@s.whatsapp.net", "").replace("@lid", "")}
                             </p>
                           </div>
                         </div>
                       </td>
 
-                      {/* Conta Plataforma com Avatar Redondo w-9 h-9 */}
+                      {/* Conta Plataforma com Avatar Redondo h-10 w-10 */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          {accountPic ? (
-                            <img
-                              src={accountPic}
-                              alt={accountName}
-                              className="w-9 h-9 rounded-full object-cover border border-border shadow-xs shrink-0"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20 shrink-0">
-                              {accountName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-semibold text-foreground text-xs leading-tight">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden border border-border bg-muted/20 shadow-xs flex items-center justify-center">
+                            {accountPic ? (
+                              <img
+                                src={accountPic}
+                                alt={accountName}
+                                className="h-full w-full rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20">
+                                {accountName.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground text-xs leading-tight truncate">
                               {accountName}
                             </p>
-                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">
                               {accountPhone}
                             </p>
                           </div>
