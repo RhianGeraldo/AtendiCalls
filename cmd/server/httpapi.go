@@ -57,6 +57,12 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/campaigns/{id}/items/{itemId}", s.handleCampaignItemUpdate)
 	mux.HandleFunc("DELETE /api/campaigns/{id}", s.handleCampaignDelete)
 
+	// Playbook management routes
+	mux.HandleFunc("GET /api/playbooks", s.handlePlaybookList)
+	mux.HandleFunc("POST /api/playbooks", s.handlePlaybookCreate)
+	mux.HandleFunc("PUT /api/playbooks/{id}", s.handlePlaybookUpdate)
+	mux.HandleFunc("DELETE /api/playbooks/{id}", s.handlePlaybookDelete)
+
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
 	if s.staticDir != "" {
@@ -827,4 +833,88 @@ func (s *server) handleCampaignDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Campanha excluída."})
+}
+
+// Playbook handlers
+func (s *server) handlePlaybookList(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	list, err := s.playbooks.List(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *server) handlePlaybookCreate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	var req Playbook
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	if req.Title == "" || req.Content == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Título e Conteúdo do Playbook são obrigatórios."})
+		return
+	}
+
+	pb, err := s.playbooks.Create(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, pb)
+}
+
+func (s *server) handlePlaybookUpdate(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	var req Playbook
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+	req.ID = id
+
+	pb, err := s.playbooks.Update(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pb)
+}
+
+func (s *server) handlePlaybookDelete(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := s.playbooks.Delete(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Playbook excluído."})
 }

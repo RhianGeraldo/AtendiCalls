@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { 
-  Megaphone, Plus, Play, Trash2, RefreshCw, Smartphone, Users, Clock, ChevronRight
+  Megaphone, Plus, Play, Trash2, RefreshCw, Smartphone, Users, Clock, ChevronRight, FileText, BookmarkPlus, Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getCampaignsApi, createCampaignApi, deleteCampaignApi, getCampaignDetailsApi } from "@/services/campaigns";
 import { getContactsApi } from "@/services/contacts";
+import { getPlaybooksApi, createPlaybookApi, updatePlaybookApi, deletePlaybookApi } from "@/services/playbooks";
 import { useSessions } from "@/stores/sessions";
 import { useCampaignRunner } from "@/stores/campaignRunner";
 import type { Campaign } from "@/types/campaign";
 import type { Contact } from "@/types/contact";
+import type { Playbook } from "@/types/playbook";
 
 export const CampaignsPage = () => {
   const sessions = useSessions((s) => s.sessions);
@@ -20,12 +22,14 @@ export const CampaignsPage = () => {
 
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
 
   // Wizard Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [formName, setFormName] = useState("");
   const [formSessionId, setFormSessionId] = useState("");
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>("");
   const [formPlaybook, setFormPlaybook] = useState(
     "👋 PITCH DE VENDAS:\n- Olá, meu nome é [Agente] da equipe AtendiCalls!\n- Gostaria de apresentar nossa nova solução VoIP para WhatsApp.\n\n❓ QUALIFICAÇÃO DE LEAD:\n1. Quantas chamadas vocês realizam por dia?\n2. Já utilizam automação ou discador sequencial?\n\n💡 TRATAMENTO DE OBJEÇÕES:\n- Objeção 'Sem tempo': 'Prometo ser breve, apenas 2 minutos!'\n- Objeção 'Preço': 'Temos planos escaláveis para qualquer equipe.'"
   );
@@ -33,6 +37,14 @@ export const CampaignsPage = () => {
   const [availableContacts, setAvailableContacts] = useState<Contact[]>([]);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Playbooks Manager Modal State
+  const [playbookModalOpen, setPlaybookModalOpen] = useState(false);
+  const [editingPlaybook, setEditingPlaybook] = useState<Playbook | null>(null);
+  const [pbTitle, setPbTitle] = useState("");
+  const [pbContent, setPbContent] = useState("");
+  const [pbCategory, setPbCategory] = useState("");
+  const [pbSubmitting, setPbSubmitting] = useState(false);
 
   const activeSessions = sessions.filter((s) => s.paired);
 
@@ -57,10 +69,95 @@ export const CampaignsPage = () => {
     }
   };
 
+  const fetchPlaybooks = async () => {
+    try {
+      const data = await getPlaybooksApi();
+      setPlaybooks(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchCampaigns();
     fetchContactsForSelection();
+    fetchPlaybooks();
   }, []);
+
+  const handleSelectSavedPlaybook = (pbId: string) => {
+    setSelectedPlaybookId(pbId);
+    if (!pbId) return;
+    const found = playbooks.find((p) => p.id === pbId);
+    if (found) {
+      setFormPlaybook(found.content);
+      toast.success(`Playbook "${found.title}" carregado!`);
+    }
+  };
+
+  const handleSaveCurrentPlaybook = async () => {
+    const title = prompt("Digite um nome/título para este Roteiro/Playbook:");
+    if (!title?.trim()) return;
+
+    try {
+      await createPlaybookApi({ title, content: formPlaybook });
+      toast.success("Roteiro salvo na biblioteca de Playbooks!");
+      fetchPlaybooks();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao salvar playbook.");
+    }
+  };
+
+  const handleOpenPlaybookManager = () => {
+    setEditingPlaybook(null);
+    setPbTitle("");
+    setPbContent("");
+    setPbCategory("");
+    setPlaybookModalOpen(true);
+  };
+
+  const handleEditPlaybookInManager = (pb: Playbook) => {
+    setEditingPlaybook(pb);
+    setPbTitle(pb.title);
+    setPbContent(pb.content);
+    setPbCategory(pb.category || "");
+    setPlaybookModalOpen(true);
+  };
+
+  const handleSavePlaybookInManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pbTitle.trim() || !pbContent.trim()) {
+      toast.error("Título e Conteúdo são obrigatórios.");
+      return;
+    }
+
+    setPbSubmitting(true);
+    try {
+      if (editingPlaybook) {
+        await updatePlaybookApi(editingPlaybook.id, { title: pbTitle, content: pbContent, category: pbCategory });
+        toast.success("Playbook atualizado!");
+      } else {
+        await createPlaybookApi({ title: pbTitle, content: pbContent, category: pbCategory });
+        toast.success("Playbook criado com sucesso!");
+      }
+      setPlaybookModalOpen(false);
+      fetchPlaybooks();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao salvar playbook.");
+    } finally {
+      setPbSubmitting(false);
+    }
+  };
+
+  const handleDeletePlaybook = async (id: string, title: string) => {
+    if (!confirm(`Excluir o playbook "${title}"?`)) return;
+    try {
+      await deletePlaybookApi(id);
+      toast.success("Playbook excluído.");
+      fetchPlaybooks();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao excluir playbook.");
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setFormName("");
@@ -193,16 +290,21 @@ export const CampaignsPage = () => {
         </div>
       </div>
 
-      {/* Header & Create Campaign Button */}
-      <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card shadow-sm">
+      {/* Header & Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl border border-border bg-card shadow-sm">
         <div>
           <h3 className="font-bold text-base text-foreground">Campanhas de Ligação Sequenciais</h3>
           <p className="text-xs text-muted-foreground">Disparo automático 1 a 1 com delay de 5s e Playbook Comercial.</p>
         </div>
 
-        <Button onClick={handleOpenCreateModal} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-xs">
-          <Plus className="w-4 h-4" /> Nova Campanha
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleOpenPlaybookManager} variant="outline" className="gap-2 text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
+            <FileText className="w-4 h-4" /> Biblioteca de Playbooks ({playbooks.length})
+          </Button>
+          <Button onClick={handleOpenCreateModal} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-xs text-xs">
+            <Plus className="w-4 h-4" /> Nova Campanha
+          </Button>
+        </div>
       </div>
 
       {/* Campaigns List */}
@@ -421,19 +523,37 @@ export const CampaignsPage = () => {
           {/* Wizard Step 3: Roteiro / Playbook do Vendedor */}
           {step === 3 && (
             <div className="space-y-3 py-2">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground">Roteiro / Playbook Comercial de Vendas</label>
-                <p className="text-[11px] text-muted-foreground">
-                  Este roteiro aparecerá na tela do vendedor ao vivo assim que o cliente atender a ligação.
-                </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground">Carregar Playbook Salvo (Opcional)</label>
+                  <Button variant="ghost" size="sm" onClick={handleSaveCurrentPlaybook} className="text-xs text-emerald-600 h-6 gap-1">
+                    <BookmarkPlus className="w-3.5 h-3.5" /> Salvar este Roteiro
+                  </Button>
+                </div>
+
+                <select
+                  value={selectedPlaybookId}
+                  onChange={(e) => handleSelectSavedPlaybook(e.target.value)}
+                  className="w-full p-2.5 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="">-- Roteiro Padrão (Ou selecione da biblioteca) --</option>
+                  {playbooks.map((pb) => (
+                    <option key={pb.id} value={pb.id}>
+                      📖 {pb.title} {pb.category ? `[${pb.category}]` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <textarea
-                rows={8}
-                value={formPlaybook}
-                onChange={(e) => setFormPlaybook(e.target.value)}
-                className="w-full p-3 text-xs font-sans leading-relaxed rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Conteúdo do Roteiro / Pitch do Vendedor *</label>
+                <textarea
+                  rows={8}
+                  value={formPlaybook}
+                  onChange={(e) => setFormPlaybook(e.target.value)}
+                  className="w-full p-3 text-xs font-sans leading-relaxed rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
             </div>
           )}
 
@@ -458,6 +578,121 @@ export const CampaignsPage = () => {
                 {submitting ? "Criando..." : "Criar & Lançar Campanha"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Playbook Manager Modal (Biblioteca de Roteiros) */}
+      <Dialog open={playbookModalOpen} onOpenChange={setPlaybookModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col justify-between overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileText className="w-5 h-5 text-emerald-500" />
+              Biblioteca de Playbooks (Roteiros Comerciais)
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+            {/* Form to Add / Edit Playbook */}
+            <form onSubmit={handleSavePlaybookInManager} className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+              <h4 className="font-bold text-xs text-foreground uppercase tracking-wider">
+                {editingPlaybook ? "Editar Playbook" : "Cadastrar Novo Playbook"}
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-semibold text-foreground">Título do Playbook *</label>
+                  <Input
+                    type="text"
+                    placeholder="Ex: Playbook Prospecção B2B SaaS"
+                    value={pbTitle}
+                    onChange={(e) => setPbTitle(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-foreground">Categoria (Opcional)</label>
+                  <Input
+                    type="text"
+                    placeholder="Ex: Vendas / Cobrança"
+                    value={pbCategory}
+                    onChange={(e) => setPbCategory(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-foreground">Conteúdo / Pitch do Roteiro *</label>
+                <textarea
+                  rows={4}
+                  placeholder="Digite o roteiro detalhado, perguntas de qualificação e tratativa de objeções..."
+                  value={pbContent}
+                  onChange={(e) => setPbContent(e.target.value)}
+                  className="w-full p-2.5 text-xs font-sans rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                {editingPlaybook && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setEditingPlaybook(null)} className="h-8 text-xs">
+                    Cancelar Edição
+                  </Button>
+                )}
+                <Button type="submit" disabled={pbSubmitting} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs">
+                  {pbSubmitting ? "Salvando..." : editingPlaybook ? "Atualizar Roteiro" : "Salvar Roteiro na Biblioteca"}
+                </Button>
+              </div>
+            </form>
+
+            {/* List of Saved Playbooks */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider">
+                Playbooks Salvos ({playbooks.length})
+              </h4>
+
+              {playbooks.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-lg">
+                  Nenhum playbook cadastrado na biblioteca ainda.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {playbooks.map((pb) => (
+                    <div key={pb.id} className="p-3 rounded-xl border border-border bg-card space-y-2 hover:border-emerald-500/30 transition-all">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-bold text-xs text-foreground">{pb.title}</h5>
+                          {pb.category && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {pb.category}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleEditPlaybookInManager(pb)} className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeletePlaybook(pb.id, pb.title)} className="h-7 w-7 text-rose-500 hover:bg-rose-500/10">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-muted-foreground line-clamp-2 font-sans bg-muted/30 p-2 rounded-md">
+                        {pb.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button variant="outline" onClick={() => setPlaybookModalOpen(false)}>
+              Fechar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

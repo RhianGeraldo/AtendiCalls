@@ -17,6 +17,7 @@ type server struct {
 	calls     *callStore
 	contacts  *contactStore
 	campaigns *campaignStore
+	playbooks *playbookStore
 	log       *slog.Logger
 	staticDir string
 }
@@ -60,6 +61,11 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	playbookStore, err := newPlaybookStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "INFO", true)
@@ -82,6 +88,7 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		calls:     callStore,
 		contacts:  contactStore,
 		campaigns: campaignStore,
+		playbooks: playbookStore,
 		log:       log,
 		staticDir: staticDir,
 	}, nil
