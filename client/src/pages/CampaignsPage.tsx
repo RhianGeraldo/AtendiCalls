@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { 
-  Megaphone, Plus, Play, Trash2, RefreshCw, Smartphone, Users, Clock, ChevronRight, FileText, BookmarkPlus, Pencil
+  Megaphone, Plus, Play, Trash2, RefreshCw, Smartphone, Users, Clock, ChevronRight, FileText, BookmarkPlus, Pencil, BarChart
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import type { Campaign } from "@/types/campaign";
 import type { Contact } from "@/types/contact";
 import type { Playbook } from "@/types/playbook";
 import { parsePlaybookContent, serializePlaybookContent, PlaybookStage } from "@/types/playbook";
+import { CampaignReportModal } from "@/components/domain/campaign/CampaignReportModal";
 
 export const CampaignsPage = () => {
   const sessions = useSessions((s) => s.sessions);
@@ -24,6 +25,7 @@ export const CampaignsPage = () => {
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [reportCampaignId, setReportCampaignId] = useState<string | null>(null);
 
   // Wizard Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -491,14 +493,20 @@ export const CampaignsPage = () => {
                 </div>
 
                 {/* Bottom Action Controls */}
-                <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/60 mt-2">
+                <div className="flex items-center gap-2 pt-3 border-t border-border/60 mt-2">
                   <Button
                     onClick={() => handleStartCampaign(cmp.id)}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2 font-bold shadow-xs"
                   >
-                    <Play className="w-3.5 h-3.5" /> Abrir Discador / Executar
+                    <Play className="w-3.5 h-3.5" /> Abrir / Executar
                   </Button>
-
+                  <Button
+                    variant="outline"
+                    onClick={() => setReportCampaignId(cmp.id)}
+                    className="text-xs gap-1 h-9 font-bold bg-muted/50 hover:bg-muted"
+                  >
+                    <BarChart className="w-3.5 h-3.5 text-emerald-500" /> Relatório
+                  </Button>
                   <Button
                     variant="outline"
                     size="icon"
@@ -1084,6 +1092,11 @@ export const CampaignsPage = () => {
           </div>
         </DialogContent>
       </Dialog>
+      {/* Campaign Report Modal */}
+      <CampaignReportModal 
+        campaignId={reportCampaignId} 
+        onClose={() => setReportCampaignId(null)} 
+      />
     </div>
   );
 };
