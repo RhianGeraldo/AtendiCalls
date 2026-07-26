@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, PhoneOff
+  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { useDialerStore } from "@/stores/dialer";
 import { useCalls } from "@/stores/calls";
 import { useSessions } from "@/stores/sessions";
 import { formatPhoneBR } from "@/utils/format";
+import { parsePlaybookContent, PlaybookStage } from "@/types/playbook";
 
 export const CampaignRunnerModal = () => {
   const {
@@ -36,11 +37,26 @@ export const CampaignRunnerModal = () => {
 
   const countdownTimerRef = useRef<any>(null);
 
+  // Playbook Stage State
+  const [activeStageIdx, setActiveStageIdx] = useState(0);
+  const [expandedObjectionIdx, setExpandedObjectionIdx] = useState<number | null>(null);
+
   const currentItem = activeCampaign?.items?.[currentIndex];
   const totalItems = activeCampaign?.items?.length || 0;
   const progressPct = totalItems > 0 ? Math.round(((currentIndex + 1) / totalItems) * 100) : 0;
 
   const session = sessions.find((s) => s.id === activeCampaign?.sessionId);
+
+  // Parse playbook stages
+  const parsedPb = parsePlaybookContent(activeCampaign?.playbook || "");
+  const isStagesMode = parsedPb.mode === "stages" && parsedPb.stages.length > 0;
+  const currentStage: PlaybookStage | undefined = isStagesMode ? parsedPb.stages[activeStageIdx] : undefined;
+
+  // Reset stage index when current item changes
+  useEffect(() => {
+    setActiveStageIdx(0);
+    setExpandedObjectionIdx(null);
+  }, [currentIndex]);
 
   // Monitor live call status in useCalls
   useEffect(() => {
@@ -92,13 +108,15 @@ export const CampaignRunnerModal = () => {
   };
 
   const handleFinishAndNext = async (status: "answered" | "rejected" | "no_answer" | "failed") => {
-    await finishCurrentItem(status);
-
-    if (status === "answered") {
-      startNextCountdown(activeCampaign?.delaySeconds || 5);
-    } else {
-      startNextCountdown(activeCampaign?.delaySeconds || 5);
+    if (isStagesMode && currentStage) {
+      const stageNote = ` [Atingiu: ${currentStage.title}]`;
+      if (!notes.includes(stageNote)) {
+        setNotes((notes || "") + stageNote);
+      }
     }
+
+    await finishCurrentItem(status);
+    startNextCountdown(activeCampaign?.delaySeconds || 5);
   };
 
   const handleSkipCountdownNow = () => {
@@ -111,7 +129,7 @@ export const CampaignRunnerModal = () => {
 
   return (
     <Dialog open={isOpen} onOpenChange={closeRunner}>
-      <DialogContent className="max-w-4xl p-0 overflow-hidden border-border bg-card shadow-2xl">
+      <DialogContent className="max-w-5xl p-0 overflow-hidden border-border bg-card shadow-2xl">
         {/* Top Header Bar */}
         <div className="p-4 bg-muted/60 border-b border-border flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -157,7 +175,7 @@ export const CampaignRunnerModal = () => {
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[440px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[480px]">
           {/* Left Column (5/12): Contact & Call Status Engine */}
           <div className="lg:col-span-5 p-5 border-r border-border/60 bg-muted/20 flex flex-col justify-between space-y-4">
             {/* Progress Counter Badge */}
@@ -236,9 +254,9 @@ export const CampaignRunnerModal = () => {
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   onClick={() => handleFinishAndNext("answered")}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Atendeu
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Atendeu / Sucesso
                 </Button>
                 <Button
                   variant="outline"
@@ -251,29 +269,138 @@ export const CampaignRunnerModal = () => {
             </div>
           </div>
 
-          {/* Right Column (7/12): Sales Playbook & Notes */}
+          {/* Right Column (7/12): Interactive Playbook Stages & Script */}
           <div className="lg:col-span-7 p-5 flex flex-col justify-between space-y-4">
-            {/* Playbook Title */}
+            {/* Playbook Header Bar */}
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-emerald-500" />
                 <h4 className="font-bold text-sm text-foreground">Playbook & Roteiro do Vendedor</h4>
               </div>
-              <span className="text-xs text-muted-foreground">Guia de Atendimento</span>
-            </div>
-
-            {/* Sales Playbook Script Box */}
-            <div className="flex-1 overflow-auto bg-muted/40 border border-border/60 rounded-xl p-4 space-y-2 max-h-[260px]">
-              {activeCampaign.playbook ? (
-                <div className="text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
-                  {activeCampaign.playbook}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  Nenhum roteiro cadastrado nesta campanha. Utilize a conversa livre com o cliente.
-                </p>
+              {isStagesMode && (
+                <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1 font-semibold">
+                  <Layers className="w-3 h-3" /> Modo Etapas ({parsedPb.stages.length})
+                </Badge>
               )}
             </div>
+
+            {/* IF STAGES MODE: Pipeline Stepper + Stage Script + Objections */}
+            {isStagesMode ? (
+              <div className="space-y-4 flex-1 flex flex-col justify-between">
+                {/* Horizontal Pipeline Stepper */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
+                  {parsedPb.stages.map((stg, idx) => {
+                    const active = idx === activeStageIdx;
+                    const passed = idx < activeStageIdx;
+                    return (
+                      <button
+                        key={stg.id}
+                        onClick={() => setActiveStageIdx(idx)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
+                          active
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : passed
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                            : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                        }`}
+                      >
+                        <span>{stg.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Active Stage Card */}
+                {currentStage && (
+                  <div className="space-y-3 flex-1 flex flex-col justify-between">
+                    {/* Active Stage Script Box */}
+                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between border-b border-emerald-500/15 pb-2">
+                        <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5" /> {currentStage.title}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">O que falar neste momento</span>
+                      </div>
+
+                      <div className="text-xs font-medium leading-relaxed text-foreground whitespace-pre-wrap font-sans pt-1">
+                        {currentStage.script}
+                      </div>
+                    </div>
+
+                    {/* Objections & Answers Accordion */}
+                    {currentStage.objections && currentStage.objections.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Tratativa de Objeções nesta Etapa
+                        </span>
+
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                          {currentStage.objections.map((obj, oIdx) => {
+                            const isExp = expandedObjectionIdx === oIdx;
+                            return (
+                              <div key={oIdx} className="rounded-lg border border-amber-500/20 bg-amber-500/5 overflow-hidden text-xs">
+                                <button
+                                  onClick={() => setExpandedObjectionIdx(isExp ? null : oIdx)}
+                                  className="w-full text-left p-2 font-bold text-amber-600 dark:text-amber-400 flex items-center justify-between hover:bg-amber-500/10 transition-colors"
+                                >
+                                  <span>⚡ Cliente disse: "{obj.trigger}"</span>
+                                  <span className="text-[10px] underline">{isExp ? "Ocultar" : "Ver resposta"}</span>
+                                </button>
+
+                                {isExp && (
+                                  <div className="p-2.5 bg-background border-t border-amber-500/20 text-foreground font-medium whitespace-pre-wrap leading-normal">
+                                    💡 <strong>O que responder:</strong> {obj.response}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stage Navigation Buttons */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={activeStageIdx === 0}
+                        onClick={() => setActiveStageIdx((i) => Math.max(0, i - 1))}
+                        className="text-xs gap-1"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Etapa Anterior
+                      </Button>
+
+                      <span className="text-xs text-muted-foreground font-mono">
+                        Etapa {activeStageIdx + 1} de {parsedPb.stages.length}
+                      </span>
+
+                      <Button
+                        size="sm"
+                        disabled={activeStageIdx === parsedPb.stages.length - 1}
+                        onClick={() => setActiveStageIdx((i) => Math.min(parsedPb.stages.length - 1, i + 1))}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1 font-bold"
+                      >
+                        Próxima Etapa <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* PLAIN TEXT MODE */
+              <div className="flex-1 overflow-auto bg-muted/40 border border-border/60 rounded-xl p-4 space-y-2 max-h-[280px]">
+                {activeCampaign.playbook ? (
+                  <div className="text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
+                    {activeCampaign.playbook}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    Nenhum roteiro cadastrado nesta campanha. Utilize a conversa livre com o cliente.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Notes Input Field */}
             <div className="space-y-1.5 pt-2 border-t border-border">

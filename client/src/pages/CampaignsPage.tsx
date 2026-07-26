@@ -15,6 +15,7 @@ import { useCampaignRunner } from "@/stores/campaignRunner";
 import type { Campaign } from "@/types/campaign";
 import type { Contact } from "@/types/contact";
 import type { Playbook } from "@/types/playbook";
+import { parsePlaybookContent } from "@/types/playbook";
 
 export const CampaignsPage = () => {
   const sessions = useSessions((s) => s.sessions);
@@ -657,33 +658,45 @@ export const CampaignsPage = () => {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {playbooks.map((pb) => (
-                    <div key={pb.id} className="p-3 rounded-xl border border-border bg-card space-y-2 hover:border-emerald-500/30 transition-all">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h5 className="font-bold text-xs text-foreground">{pb.title}</h5>
-                          {pb.category && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {pb.category}
-                            </Badge>
-                          )}
+                  {playbooks.map((pb) => {
+                    const parsed = parsePlaybookContent(pb.content);
+                    const isStages = parsed.mode === "stages";
+
+                    return (
+                      <div key={pb.id} className="p-3 rounded-xl border border-border bg-card space-y-2 hover:border-emerald-500/30 transition-all">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-bold text-xs text-foreground">{pb.title}</h5>
+                            {pb.category && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {pb.category}
+                              </Badge>
+                            )}
+                            {isStages && (
+                              <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                                {parsed.stages.length} Etapas Interativas
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleEditPlaybookInManager(pb)} className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeletePlaybook(pb.id, pb.title)} className="h-7 w-7 text-rose-500 hover:bg-rose-500/10">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditPlaybookInManager(pb)} className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDeletePlaybook(pb.id, pb.title)} className="h-7 w-7 text-rose-500 hover:bg-rose-500/10">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2 font-sans bg-muted/30 p-2 rounded-md">
+                          {isStages
+                            ? `Etapas: ${parsed.stages.map((s) => s.title).join(" ➔ ")}`
+                            : pb.content}
+                        </p>
                       </div>
-
-                      <p className="text-[11px] text-muted-foreground line-clamp-2 font-sans bg-muted/30 p-2 rounded-md">
-                        {pb.content}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
