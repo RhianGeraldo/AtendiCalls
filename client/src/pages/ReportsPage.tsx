@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
   BarChart3, PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, 
-  Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2
+  Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, User as UserIcon
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -328,44 +328,113 @@ export const ReportsPage = () => {
 
                   return (
                     <tr key={call.callId} className="hover:bg-muted/30 transition-colors">
+                      {/* Contato com Avatar Redondo w-9 h-9 */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           {call.pictureUrl ? (
-                            <img src={call.pictureUrl} alt={call.name || call.peer} className="w-8 h-8 rounded-full object-cover border" />
+                            <img
+                              src={call.pictureUrl}
+                              alt={call.name || call.peer}
+                              className="w-9 h-9 rounded-full object-cover border border-border shadow-xs shrink-0"
+                            />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">{ (call.name || call.peer || "?")[0].toUpperCase() }</div>
+                            <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs border border-emerald-500/20 shrink-0">
+                              {(call.name || call.peer || "?").charAt(0).toUpperCase()}
+                            </div>
                           )}
                           <div>
-                            <p className="font-semibold text-foreground text-xs">{call.name || "Desconhecido"}</p>
-                            <p className="font-mono text-[10px] text-muted-foreground">{call.peer.replace("@s.whatsapp.net", "").replace("@lid", "")}</p>
+                            <p className="font-semibold text-foreground text-xs leading-tight">
+                              {call.name || "Contato WhatsApp"}
+                            </p>
+                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                              {call.peer.replace("@s.whatsapp.net", "").replace("@lid", "")}
+                            </p>
                           </div>
                         </div>
                       </td>
+
+                      {/* Conta Plataforma com Avatar Redondo w-9 h-9 */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           {accountPic ? (
-                            <img src={accountPic} alt={accountName} className="w-8 h-8 rounded-full object-cover border" />
+                            <img
+                              src={accountPic}
+                              alt={accountName}
+                              className="w-9 h-9 rounded-full object-cover border border-border shadow-xs shrink-0"
+                            />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">{ accountName[0].toUpperCase() }</div>
+                            <div className="w-9 h-9 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/20 shrink-0">
+                              {accountName.charAt(0).toUpperCase()}
+                            </div>
                           )}
                           <div>
-                            <p className="font-semibold text-foreground text-xs">{accountName}</p>
-                            <p className="font-mono text-[10px] text-muted-foreground">{accountPhone}</p>
+                            <p className="font-semibold text-foreground text-xs leading-tight">
+                              {accountName}
+                            </p>
+                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                              {accountPhone}
+                            </p>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4">
-                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${isOutbound ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>
-                            {isOutbound ? "Saída" : "Entrada"}
-                         </span>
+
+                      {/* Direção com Ícone / Emoji */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {isOutbound ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-md">
+                            <PhoneOutgoing className="w-3.5 h-3.5 text-rose-500" /> Saída
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md">
+                            <PhoneIncoming className="w-3.5 h-3.5 text-emerald-500" /> Entrada
+                          </span>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-xs">{call.owner || "-"}</td>
-                      <td className="py-3 px-4 text-xs text-muted-foreground">{formatTimestamp(call.startedAt)}</td>
-                      <td className="py-3 px-4 text-xs font-mono font-semibold text-foreground">{isConnected ? formatDuration(durationSec) : "--"}</td>
-                      <td className="py-3 px-4">
-                        <Badge variant="outline" className={isConnected ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-slate-500"}>
-                          {isConnected ? "Atendida" : call.status}
-                        </Badge>
+
+                      {/* Agente */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {call.owner ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground bg-muted px-2.5 py-1 rounded-md border border-border">
+                            <UserIcon className="w-3 h-3 text-emerald-500" /> {call.owner}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Não atribuído</span>
+                        )}
+                      </td>
+
+                      {/* Horário */}
+                      <td className="py-3 px-4 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        {formatTimestamp(call.startedAt)}
+                      </td>
+
+                      {/* Duração */}
+                      <td className="py-3 px-4 font-mono text-xs font-bold text-foreground whitespace-nowrap">
+                        {isConnected ? (
+                          <span className="text-emerald-500">{formatDuration(durationSec)}</span>
+                        ) : (
+                          <span className="text-muted-foreground font-normal">--</span>
+                        )}
+                      </td>
+
+                      {/* Status Detalhado (Atendida / Tocando / Rejeitada / Perdida) */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {isConnected ? (
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1 font-medium px-2.5 py-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Atendida
+                          </Badge>
+                        ) : call.status === "ringing" ? (
+                          <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1 font-medium px-2.5 py-0.5">
+                            <AlertCircle className="w-3.5 h-3.5 animate-pulse" /> Tocando
+                          </Badge>
+                        ) : call.endReason?.includes("declined") ? (
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 gap-1 font-medium px-2.5 py-0.5">
+                            <XCircle className="w-3.5 h-3.5" /> Rejeitada
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-rose-500/10 text-rose-500 border-rose-500/30 gap-1 font-medium px-2.5 py-0.5">
+                            <XCircle className="w-3.5 h-3.5" /> Perdida
+                          </Badge>
+                        )}
                       </td>
                     </tr>
                   );
