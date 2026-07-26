@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers, Mic, MicOff, Phone, Zap
+  PhoneCall, Play, Pause, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers, Mic, MicOff, Phone, Zap, Check
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,7 @@ export const CampaignRunnerModal = () => {
 
   // Playbook Stage State
   const [activeStageIdx, setActiveStageIdx] = useState(0);
+  const [maxStageReachedIdx, setMaxStageReachedIdx] = useState(0);
   const [expandedObjectionIdx, setExpandedObjectionIdx] = useState<number | null>(null);
 
   const currentItem = activeCampaign?.items?.[currentIndex];
@@ -76,11 +77,19 @@ export const CampaignRunnerModal = () => {
   // Reset stage index & call timer when contact changes
   useEffect(() => {
     setActiveStageIdx(0);
+    setMaxStageReachedIdx(0);
     setExpandedObjectionIdx(null);
     setCallDuration(0);
     setIsMuted(false);
     if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   }, [currentIndex]);
+
+  // Keep track of highest stage reached during campaign run
+  useEffect(() => {
+    if (activeStageIdx > maxStageReachedIdx) {
+      setMaxStageReachedIdx(activeStageIdx);
+    }
+  }, [activeStageIdx]);
 
   // Monitor active call status
   useEffect(() => {
@@ -108,10 +117,9 @@ export const CampaignRunnerModal = () => {
     }
   }, [activeCall, isOpen, currentItem]);
 
-  // Track previous call state to detect call termination transitions
+  // Track previous call state to detect call termination transitions for auto-progression
   const prevCallStateRef = useRef(callState);
 
-  // Auto-Dialer logic & Call Termination Transition Listener
   useEffect(() => {
     if (!isOpen || !currentItem || isPaused) return;
 
@@ -185,7 +193,7 @@ export const CampaignRunnerModal = () => {
     if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   };
 
-  // Start 5s countdown between non-answered calls
+  // Start 5s countdown between contacts
   const startNextCountdown = (delaySec: number = 5) => {
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     let remaining = delaySec;
@@ -207,8 +215,10 @@ export const CampaignRunnerModal = () => {
       endCallMutation.mutate({ sid: activeCampaign.sessionId, callId: activeCall.callId });
     }
 
-    if (isStagesMode && currentStage) {
-      const stageNote = ` [Atingiu: ${currentStage.title}]`;
+    // Record highest stage reached in notes
+    let stageNote = "";
+    if (isStagesMode && parsedPb.stages[maxStageReachedIdx]) {
+      stageNote = ` [Atingiu: ${parsedPb.stages[maxStageReachedIdx].title}]`;
       if (!notes.includes(stageNote)) {
         setNotes((notes || "") + stageNote);
       }
@@ -228,10 +238,10 @@ export const CampaignRunnerModal = () => {
 
   return (
     <Dialog open={isOpen} onOpenChange={closeRunner}>
-      {/* FIXED DIALOG SIZE: h-[620px] max-h-[90vh] TO PREVENT RESIZING */}
+      {/* FIXED DIALOG CONTAINER WITH SINGLE DEFAULT CLOSE BUTTON */}
       <DialogContent className="max-w-5xl h-[620px] max-h-[90vh] p-0 overflow-hidden border-border bg-card shadow-2xl flex flex-col justify-between">
         {/* Top Header Bar */}
-        <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between gap-4 shrink-0">
+        <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between gap-4 shrink-0 pr-10">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
               <PhoneCall className="w-4 h-4 animate-pulse" />
@@ -249,35 +259,17 @@ export const CampaignRunnerModal = () => {
             </div>
           </div>
 
-          {/* Action Controls & Auto-Dial Toggle */}
-          <div className="flex items-center gap-3">
-            {/* Auto-Dial Switch */}
-            <div className="flex items-center gap-1.5 bg-background border border-border px-2.5 py-1 rounded-lg text-xs font-semibold">
-              <Zap className={`w-3.5 h-3.5 ${autoDial ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground"}`} />
-              <span className="text-muted-foreground">Discagem Automática:</span>
-              <button
-                type="button"
-                onClick={() => setAutoDial(!autoDial)}
-                className={`px-2 py-0.5 rounded font-bold transition-all text-[11px] ${
-                  autoDial ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {autoDial ? "LIGADA" : "DESLIGADA"}
-              </button>
-            </div>
-
+          {/* Action Controls */}
+          <div className="flex items-center gap-2">
             {isPaused ? (
-              <Button size="sm" onClick={resumeRunner} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8">
-                <Play className="w-3.5 h-3.5" /> Retomar
+              <Button size="sm" onClick={resumeRunner} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8 font-bold">
+                <Play className="w-3.5 h-3.5 fill-white" /> Retomar Disparos
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={pauseRunner} className="gap-1.5 text-xs text-amber-500 border-amber-500/30 h-8">
+              <Button size="sm" variant="outline" onClick={pauseRunner} className="gap-1.5 text-xs text-amber-500 border-amber-500/30 h-8 font-bold">
                 <Pause className="w-3.5 h-3.5" /> Pausar
               </Button>
             )}
-            <Button size="icon" variant="ghost" onClick={closeRunner} className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <X className="w-4 h-4" />
-            </Button>
           </div>
         </div>
 
@@ -291,7 +283,7 @@ export const CampaignRunnerModal = () => {
 
         {/* Main Content Grid (Fixed Height Container) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden">
-          {/* Left Column (5/12): EMBEDDED VIRTUAL PHONE & CALL ENGINE */}
+          {/* Left Column (5/12): SOFTPHONE / CELULAR VIRTUAL & STAGE PROGRESS */}
           <div className="lg:col-span-5 p-4 border-r border-border/60 bg-muted/20 flex flex-col justify-between space-y-3 overflow-y-auto">
             {/* Progress Counter Badge */}
             <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
@@ -299,8 +291,13 @@ export const CampaignRunnerModal = () => {
               <span className="font-mono">{progressPct}% Concluído</span>
             </div>
 
-            {/* Embedded Celular Virtual Card */}
-            <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm text-center space-y-3 my-auto relative overflow-hidden">
+            {/* CELULAR VIRTUAL CHASSI CONTAINER */}
+            <div className="bg-card border-2 border-border/90 rounded-3xl p-4 shadow-md text-center space-y-3 my-auto relative overflow-hidden">
+              {/* Smartphone Top Speaker Notch */}
+              <div className="flex justify-center -mt-1 mb-1">
+                <div className="h-1.5 w-16 bg-muted-foreground/30 rounded-full" />
+              </div>
+
               {/* Call Status Badge Header */}
               <div className="flex justify-center">
                 {callState === "connected" ? (
@@ -401,30 +398,57 @@ export const CampaignRunnerModal = () => {
                   {startCallMutation.isPending ? "Iniciando Chamada..." : "Discar Agora"}
                 </Button>
               )}
-            </div>
 
-            {/* End Call / Result Buttons */}
-            <div className="space-y-2 pt-2 border-t border-border/50">
-              <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block text-center">
-                Registrar Resultado do Atendimento
-              </span>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  onClick={() => handleFinishAndNext("answered")}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold py-4"
+              {/* DISCAGEM AUTOMÁTICA SWITCH (MOVED BELOW DIAL BUTTON) */}
+              <div className="pt-2 border-t border-border/40 flex items-center justify-between px-1 text-xs">
+                <div className="flex items-center gap-1.5 text-muted-foreground font-semibold">
+                  <Zap className={`w-3.5 h-3.5 ${autoDial ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground"}`} />
+                  <span>Discagem Automática:</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoDial(!autoDial)}
+                  className={`px-2.5 py-1 rounded-md font-extrabold transition-all text-[11px] ${
+                    autoDial ? "bg-emerald-600 text-white shadow-xs" : "bg-muted text-muted-foreground border border-border"
+                  }`}
                 >
-                  <CheckCircle2 className="w-4 h-4" /> Atendeu / Sucesso
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleFinishAndNext("no_answer")}
-                  className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 text-xs gap-1.5 py-4"
-                >
-                  <PhoneOff className="w-4 h-4" /> Não Atendeu
-                </Button>
+                  {autoDial ? "LIGADA" : "DESLIGADA"}
+                </button>
               </div>
             </div>
+
+            {/* MARCADOR DE ETAPA ALCANÇADA PELO CLIENTE (REGISTRO AUTOMÁTICO DA ETAPA) */}
+            {isStagesMode && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <span className="text-[11px] text-muted-foreground font-bold uppercase tracking-wider block text-center">
+                  🎯 Etapa Alcançada pelo Cliente
+                </span>
+
+                <div className="flex flex-wrap items-center justify-center gap-1">
+                  {parsedPb.stages.map((stg, sIdx) => {
+                    const isReached = sIdx <= maxStageReachedIdx;
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => {
+                          setActiveStageIdx(sIdx);
+                          setMaxStageReachedIdx(sIdx);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                          isReached
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-background text-muted-foreground border-border hover:border-emerald-500/40"
+                        }`}
+                      >
+                        {isReached && <Check className="w-3 h-3 inline mr-1" />}
+                        {sIdx + 1}. {stg.title.split("(")[0].trim()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column (7/12): FIXED HEIGHT STORIES PLAYBOOK */}
