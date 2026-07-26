@@ -1,9 +1,9 @@
-import { LayoutDashboard, Phone, Smartphone, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Phone, Smartphone, Users, LogOut, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
-export type Tab = "dashboard" | "calls" | "accounts" | "users";
+export type Tab = "dashboard" | "calls" | "reports" | "accounts" | "users";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -18,6 +18,7 @@ export const Sidebar = ({ activeTab, onNavigate }: SidebarProps) => {
   const tabs = [
     { id: "dashboard" as Tab, label: "Dashboard", icon: <LayoutDashboard className="h-5 w-5" /> },
     { id: "calls" as Tab, label: "Ligações", icon: <Phone className="h-5 w-5" /> },
+    { id: "reports" as Tab, label: "Relatórios", icon: <BarChart3 className="h-5 w-5" /> },
     { id: "accounts" as Tab, label: "Contas WhatsApp", icon: <Smartphone className="h-5 w-5" /> },
     ...(isAdmin ? [{ id: "users" as Tab, label: "Usuários", icon: <Users className="h-5 w-5" /> }] : []),
   ];

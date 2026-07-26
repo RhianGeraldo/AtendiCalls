@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -55,10 +56,11 @@ type subscriber struct {
 }
 
 type Broker struct {
-	mu      sync.RWMutex
-	subs    map[*subscriber]struct{}
-	calls   map[string]*CallRecord
-	history []CallRecord
+	mu        sync.RWMutex
+	subs      map[*subscriber]struct{}
+	calls     map[string]*CallRecord
+	history   []CallRecord
+	callStore *callStore
 
 	SnapshotFn func() []any
 }
@@ -119,7 +121,15 @@ func (b *Broker) upsertCall(r CallRecord) {
 	b.mu.Lock()
 	cp := r
 	b.calls[r.CallID] = &cp
+	cs := b.callStore
 	b.mu.Unlock()
+
+	if cs != nil {
+		go func() {
+			_ = cs.SaveOrUpdate(context.Background(), cp)
+		}()
+	}
+
 	b.broadcastCallList()
 	b.broadcast(map[string]any{
 		"type": "call-status", "sessionId": r.SessionID, "id": r.CallID, "owner": r.Owner,
@@ -150,7 +160,15 @@ func (b *Broker) setOwner(id, owner string) bool {
 		return false
 	}
 	c.Owner = &owner
+	cp := *c
+	cs := b.callStore
 	b.mu.Unlock()
+
+	if cs != nil {
+		go func() {
+			_ = cs.SaveOrUpdate(context.Background(), cp)
+		}()
+	}
 
 	b.broadcastCallList()
 	b.broadcast(map[string]any{
@@ -191,7 +209,14 @@ func (b *Broker) endCall(id, reason string) {
 	b.history = append(b.history, ended)
 	owner := c.Owner
 	sessionID := c.SessionID
+	cs := b.callStore
 	b.mu.Unlock()
+
+	if cs != nil {
+		go func() {
+			_ = cs.SaveOrUpdate(context.Background(), ended)
+		}()
+	}
 
 	b.broadcast(map[string]any{
 		"type": "call-ended", "sessionId": sessionID, "id": id, "owner": owner, "reason": reason, "endedAt": now,
@@ -220,6 +245,20 @@ func (b *Broker) emitIncomingClaimed(sessionID, id, owner string) {
 }
 
 func (b *Broker) historyRows(sessionID string, limit int) []CallRecord {
+	b.mu.RLock()
+	cs := b.callStore
+	b.mu.RUnlock()
+
+	if cs != nil {
+		recs, _, err := cs.ListHistory(context.Background(), CallFilter{
+			SessionID: sessionID,
+			Limit:     limit,
+		})
+		if err == nil {
+			return recs
+		}
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	rows := make([]CallRecord, 0, limit)

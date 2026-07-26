@@ -14,6 +14,7 @@ type server struct {
 	broker    *Broker
 	sessions  *SessionManager
 	users     *userStore
+	calls     *callStore
 	log       *slog.Logger
 	staticDir string
 }
@@ -42,12 +43,18 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	callStore, err := newCallStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "INFO", true)
 	}
 
 	broker := NewBroker()
+	broker.callStore = callStore
 	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls)
 	broker.SnapshotFn = mgr.snapshotEvents
 
@@ -56,5 +63,5 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
-	return &server{broker: broker, sessions: mgr, users: userStore, log: log, staticDir: staticDir}, nil
+	return &server{broker: broker, sessions: mgr, users: userStore, calls: callStore, log: log, staticDir: staticDir}, nil
 }

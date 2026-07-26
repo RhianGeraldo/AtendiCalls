@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -32,6 +33,10 @@ func (s *server) routes() http.Handler {
 	// Auth routes
 	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+
+	// Reports & Analytics routes
+	mux.HandleFunc("GET /api/calls/history", s.handleCallHistory)
+	mux.HandleFunc("GET /api/calls/analytics", s.handleCallAnalytics)
 
 	// User management routes
 	mux.HandleFunc("GET /api/users", s.handleUserList)
@@ -474,4 +479,86 @@ func (s *server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	q := r.URL.Query()
+	page := 1
+	if p := q.Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+	}
+	limit := 20
+	if l := q.Get("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+	var startDt, endDt int64
+	if st := q.Get("startDate"); st != "" {
+		fmt.Sscanf(st, "%d", &startDt)
+	}
+	if et := q.Get("endDate"); et != "" {
+		fmt.Sscanf(et, "%d", &endDt)
+	}
+
+	filter := CallFilter{
+		SessionID: q.Get("sessionId"),
+		Owner:     q.Get("owner"),
+		Direction: q.Get("direction"),
+		Status:    q.Get("status"),
+		Search:    q.Get("search"),
+		StartDate: startDt,
+		EndDate:   endDt,
+		Page:      page,
+		Limit:     limit,
+	}
+
+	records, total, err := s.calls.ListHistory(r.Context(), filter)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"records": records,
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+	})
+}
+
+func (s *server) handleCallAnalytics(w http.ResponseWriter, r *http.Request) {
+	u := s.authUser(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
+		return
+	}
+
+	q := r.URL.Query()
+	var startDt, endDt int64
+	if st := q.Get("startDate"); st != "" {
+		fmt.Sscanf(st, "%d", &startDt)
+	}
+	if et := q.Get("endDate"); et != "" {
+		fmt.Sscanf(et, "%d", &endDt)
+	}
+
+	filter := CallFilter{
+		SessionID: q.Get("sessionId"),
+		Owner:     q.Get("owner"),
+		StartDate: startDt,
+		EndDate:   endDt,
+	}
+
+	analytics, err := s.calls.GetAnalytics(r.Context(), filter)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, analytics)
 }

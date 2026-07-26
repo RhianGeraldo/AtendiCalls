@@ -7,6 +7,7 @@ import { CallsPage } from "@/pages/CallsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PhoneDialerModal } from "@/components/domain/call/PhoneDialerModal";
 import { ensureSessionsWired, useSessions } from "@/stores/sessions";
@@ -43,6 +44,7 @@ export const App = () => {
       <AppShell activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === "dashboard" && <DashboardPage />}
         {activeTab === "calls" && <CallsPage sid={activeId || ""} />}
+        {activeTab === "reports" && <ReportsPage />}
         {activeTab === "accounts" && <AccountsPage />}
         {activeTab === "users" && <UsersPage />}
       </AppShell>
