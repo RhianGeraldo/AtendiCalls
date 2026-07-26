@@ -77,8 +77,11 @@ function formatPhoneBR(raw: string): string {
   return raw;
 }
 
+import { useCampaignRunner } from "@/stores/campaignRunner";
+
 export const PhoneDialerModal = () => {
   const { isOpen, closeDialer, selectedSid, setSelectedSid, initialPhone } = useDialerStore();
+  const isCampaignOpen = useCampaignRunner((s) => s.isOpen);
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
   const micId = useDevices((s) => s.micId);
@@ -411,7 +414,7 @@ export const PhoneDialerModal = () => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen, phone, currentSid, activeSession?.paired, activeCall]);
 
-  if (!isOpen) return null;
+  if (!isOpen || isCampaignOpen) return null;
 
   const stylePosition = pos
     ? { left: `${pos.x}px`, top: `${pos.y}px`, right: "auto", bottom: "auto" }

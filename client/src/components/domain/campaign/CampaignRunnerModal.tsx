@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers
+  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers, Mic, MicOff, Phone
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCampaignRunner } from "@/stores/campaignRunner";
-import { useDialerStore } from "@/stores/dialer";
 import { useCalls } from "@/stores/calls";
 import { useSessions } from "@/stores/sessions";
+import { useDevices } from "@/stores/devices";
+import { useStartCall } from "@/hooks/useStartCall";
+import { useEndCall } from "@/hooks/useEndCall";
 import { formatPhoneBR } from "@/utils/format";
 import { parsePlaybookContent, PlaybookStage } from "@/types/playbook";
 
@@ -33,9 +35,17 @@ export const CampaignRunnerModal = () => {
 
   const sessions = useSessions((s) => s.sessions);
   const calls = useCalls((s) => s.calls);
-  const openDialer = useDialerStore((s) => s.openDialer);
+  const micId = useDevices((s) => s.micId);
 
   const countdownTimerRef = useRef<any>(null);
+
+  // Active Embedded Call Hooks
+  const startCallMutation = useStartCall(activeCampaign?.sessionId || "", micId);
+  const endCallMutation = useEndCall();
+
+  const [isMuted, setIsMuted] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const durationTimerRef = useRef<any>(null);
 
   // Playbook Stage State
   const [activeStageIdx, setActiveStageIdx] = useState(0);
@@ -47,48 +57,80 @@ export const CampaignRunnerModal = () => {
 
   const session = sessions.find((s) => s.id === activeCampaign?.sessionId);
 
+  const formatSec = (totalSec: number) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
+  // Find active WebRTC call for current session & contact
+  const activeCall = calls.find((c) => c.sessionId === activeCampaign?.sessionId && c.status !== "ended");
+
   // Parse playbook stages
   const parsedPb = parsePlaybookContent(activeCampaign?.playbook || "");
   const isStagesMode = parsedPb.mode === "stages" && parsedPb.stages.length > 0;
   const currentStage: PlaybookStage | undefined = isStagesMode ? parsedPb.stages[activeStageIdx] : undefined;
 
-  // Reset stage index when current item changes
+  // Reset stage index & call timer when contact changes
   useEffect(() => {
     setActiveStageIdx(0);
     setExpandedObjectionIdx(null);
+    setCallDuration(0);
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   }, [currentIndex]);
 
-  // Monitor live call status in useCalls
+  // Monitor active call status
   useEffect(() => {
-    if (!isOpen || !currentItem || isPaused) return;
+    if (!isOpen || !currentItem) return;
 
-    // Find live call matching current item phone
-    const rawTarget = currentItem.phone.replace(/\D/g, "");
-    const liveCall = calls.find((c) => {
-      const p = c.peer.replace(/\D/g, "");
-      return (p.includes(rawTarget) || rawTarget.includes(p)) && c.status !== "ended";
-    });
-
-    if (liveCall) {
-      if (liveCall.status === "connected") {
+    if (activeCall) {
+      if (activeCall.status === "connected") {
         setCallState("connected");
-        // Clear countdown if connected
+        // Start duration timer
+        if (!durationTimerRef.current) {
+          const startTime = activeCall.startedAt || Date.now();
+          durationTimerRef.current = setInterval(() => {
+            setCallDuration(Math.floor((Date.now() - startTime) / 1000));
+          }, 1000);
+        }
+        // Stop countdown if connected
         if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         setCountdown(0);
-      } else if (liveCall.status === "ringing" || liveCall.status === "starting") {
+      } else if (activeCall.status === "ringing" || activeCall.status === "starting") {
         setCallState("calling");
       }
+    } else if (callState === "connected" || callState === "calling") {
+      setCallState("idle");
+      if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     }
-  }, [calls, isOpen, currentItem, isPaused]);
+  }, [activeCall, isOpen, currentItem]);
 
-  // Initiate call when item changes and callState is idle
+  // Initiate WebRTC Call directly embedded inside Campaign Runner
   const handleDialCurrentItem = () => {
     if (!activeCampaign || !currentItem || isPaused) return;
     const rawTarget = currentItem.phone.replace(/\D/g, "");
     if (!rawTarget) return;
 
     setCallState("calling");
-    openDialer(activeCampaign.sessionId, rawTarget);
+    setCallDuration(0);
+
+    startCallMutation.mutate(
+      { phone: rawTarget, record: false },
+      {
+        onError: () => {
+          setCallState("idle");
+        },
+      }
+    );
+  };
+
+  // Hangup active call
+  const handleHangupCurrentCall = () => {
+    if (activeCall && activeCampaign) {
+      endCallMutation.mutate({ sid: activeCampaign.sessionId, callId: activeCall.callId });
+    }
+    setCallState("idle");
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   };
 
   // Start 5s countdown between non-answered calls
@@ -108,6 +150,11 @@ export const CampaignRunnerModal = () => {
   };
 
   const handleFinishAndNext = async (status: "answered" | "rejected" | "no_answer" | "failed") => {
+    // Hangup if still in call
+    if (activeCall && activeCampaign) {
+      endCallMutation.mutate({ sid: activeCampaign.sessionId, callId: activeCall.callId });
+    }
+
     if (isStagesMode && currentStage) {
       const stageNote = ` [Atingiu: ${currentStage.title}]`;
       if (!notes.includes(stageNote)) {
@@ -175,8 +222,8 @@ export const CampaignRunnerModal = () => {
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[480px]">
-          {/* Left Column (5/12): Contact & Call Status Engine */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[500px]">
+          {/* Left Column (5/12): EMBEDDED VIRTUAL PHONE & CALL ENGINE */}
           <div className="lg:col-span-5 p-5 border-r border-border/60 bg-muted/20 flex flex-col justify-between space-y-4">
             {/* Progress Counter Badge */}
             <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
@@ -184,35 +231,20 @@ export const CampaignRunnerModal = () => {
               <span className="font-mono">{progressPct}% Concluído</span>
             </div>
 
-            {/* Current Contact Info Card */}
-            <div className="bg-card border border-border/80 rounded-xl p-4 shadow-sm text-center space-y-3 my-auto">
-              <div className="h-16 w-16 mx-auto rounded-full overflow-hidden border-2 border-emerald-500/30 bg-muted flex items-center justify-center shadow-md">
-                {currentItem.pictureUrl ? (
-                  <img src={currentItem.pictureUrl} alt={currentItem.name} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full bg-emerald-500/10 text-emerald-600 font-extrabold text-xl flex items-center justify-center">
-                    {currentItem.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-extrabold text-base text-foreground truncate">{currentItem.name}</h4>
-                <p className="font-mono text-xs text-muted-foreground mt-0.5">{formatPhoneBR(currentItem.phone)}</p>
-              </div>
-
-              {/* Call Status Badge */}
-              <div className="pt-1">
+            {/* Embedded Celular Virtual Card */}
+            <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-sm text-center space-y-4 my-auto relative overflow-hidden">
+              {/* Call Status Badge Header */}
+              <div className="flex justify-center">
                 {callState === "connected" ? (
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5 font-bold px-3 py-1 text-xs animate-pulse">
-                    <CheckCircle2 className="w-4 h-4" /> Chamada Conectada / Atendida
+                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5 font-bold px-3.5 py-1 text-xs animate-pulse">
+                    <CheckCircle2 className="w-4 h-4" /> Em Chamada ({formatSec(callDuration)})
                   </Badge>
                 ) : callState === "calling" ? (
-                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1.5 font-semibold px-3 py-1 text-xs animate-pulse">
-                    <AlertCircle className="w-4 h-4" /> Discando para o cliente...
+                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1.5 font-semibold px-3.5 py-1 text-xs animate-pulse">
+                    <AlertCircle className="w-4 h-4 animate-spin" /> Discando para o cliente...
                   </Badge>
                 ) : countdown > 0 ? (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold px-3 py-1 text-xs">
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold px-3.5 py-1 text-xs">
                     <Clock className="w-4 h-4 animate-spin" /> Próxima discagem em {countdown}s
                   </Badge>
                 ) : (
@@ -222,25 +254,73 @@ export const CampaignRunnerModal = () => {
                 )}
               </div>
 
-              {/* Dial Control Button */}
-              {callState === "idle" && countdown === 0 && (
-                <Button
-                  onClick={handleDialCurrentItem}
-                  disabled={isPaused}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 mt-2 shadow-xs"
-                >
-                  <PhoneCall className="w-4 h-4" /> Discar Agora
-                </Button>
-              )}
+              {/* Contact Avatar */}
+              <div className="relative">
+                <div className={`h-20 w-20 mx-auto rounded-full overflow-hidden border-2 transition-all shadow-md flex items-center justify-center ${
+                  callState === "connected"
+                    ? "border-emerald-500 ring-4 ring-emerald-500/20 scale-105"
+                    : callState === "calling"
+                    ? "border-blue-500 ring-4 ring-blue-500/20 animate-pulse"
+                    : "border-border bg-muted"
+                }`}>
+                  {currentItem.pictureUrl ? (
+                    <img src={currentItem.pictureUrl} alt={currentItem.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-emerald-500/10 text-emerald-600 font-extrabold text-2xl flex items-center justify-center">
+                      {currentItem.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
 
-              {/* Countdown Skip Button */}
-              {countdown > 0 && (
+              {/* Contact Name & Phone */}
+              <div>
+                <h4 className="font-extrabold text-lg text-foreground truncate">{currentItem.name}</h4>
+                <p className="font-mono text-xs text-muted-foreground mt-0.5">{formatPhoneBR(currentItem.phone)}</p>
+              </div>
+
+              {/* EMBEDDED CALL CONTROLS */}
+              {callState === "connected" || callState === "calling" ? (
+                <div className="space-y-3 pt-2 border-t border-border/50">
+                  <div className="flex items-center justify-center gap-3">
+                    {/* Mute Mic Button */}
+                    <Button
+                      variant={isMuted ? "destructive" : "outline"}
+                      size="icon"
+                      onClick={() => setIsMuted(!isMuted)}
+                      className="h-11 w-11 rounded-full shadow-xs"
+                      title={isMuted ? "Desmudar microfone" : "Mutar microfone"}
+                    >
+                      {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                    </Button>
+
+                    {/* Hangup Call Button */}
+                    <Button
+                      onClick={handleHangupCurrentCall}
+                      className="h-12 px-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold gap-2 shadow-md"
+                    >
+                      <PhoneOff className="w-5 h-5" /> Desligar Chamada
+                    </Button>
+                  </div>
+                </div>
+              ) : countdown > 0 ? (
+                /* COUNTDOWN BUTTON */
                 <Button
                   onClick={handleSkipCountdownNow}
                   variant="outline"
-                  className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 mt-2 text-xs"
+                  className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 text-xs font-bold py-5"
                 >
                   <ChevronRight className="w-4 h-4" /> Pular Delay de {countdown}s & Discar Próximo
+                </Button>
+              ) : (
+                /* IDLE DIAL BUTTON */
+                <Button
+                  onClick={handleDialCurrentItem}
+                  disabled={isPaused || startCallMutation.isPending}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 py-6 text-sm shadow-md rounded-xl"
+                >
+                  <Phone className="w-5 h-5" />
+                  {startCallMutation.isPending ? "Iniciando Chamada..." : "Discar Agora (Atender no Celular Virtual)"}
                 </Button>
               )}
             </div>
@@ -254,22 +334,22 @@ export const CampaignRunnerModal = () => {
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   onClick={() => handleFinishAndNext("answered")}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold py-5"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Atendeu / Sucesso
+                  <CheckCircle2 className="w-4 h-4" /> Atendeu / Sucesso
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => handleFinishAndNext("no_answer")}
-                  className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 text-xs gap-1.5"
+                  className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 text-xs gap-1.5 py-5"
                 >
-                  <PhoneOff className="w-3.5 h-3.5" /> Não Atendeu
+                  <PhoneOff className="w-4 h-4" /> Não Atendeu
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Right Column (7/12): Interactive Playbook Stages & Script */}
+          {/* Right Column (7/12): Interactive Playbook Stories & Script */}
           <div className="lg:col-span-7 p-5 flex flex-col justify-between space-y-4">
             {/* Playbook Header Bar */}
             <div className="flex items-center justify-between border-b border-border pb-3">
@@ -284,10 +364,10 @@ export const CampaignRunnerModal = () => {
               )}
             </div>
 
-            {/* IF STAGES MODE: Pipeline Stepper + Stage Script + Objections */}
+            {/* IF STAGES MODE: Stories Stepper + Stage Script + Objections */}
             {isStagesMode ? (
               <div className="space-y-4 flex-1 flex flex-col justify-between">
-                {/* Horizontal Pipeline Stepper */}
+                {/* Horizontal Stories Pipeline Stepper */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
                   {parsedPb.stages.map((stg, idx) => {
                     const active = idx === activeStageIdx;
@@ -298,7 +378,7 @@ export const CampaignRunnerModal = () => {
                         onClick={() => setActiveStageIdx(idx)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
                           active
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold"
                             : passed
                             ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
                             : "bg-muted text-muted-foreground border-border hover:text-foreground"
