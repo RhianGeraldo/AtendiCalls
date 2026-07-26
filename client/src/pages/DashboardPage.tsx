@@ -21,7 +21,7 @@ export const DashboardPage = () => {
   const completedCalls = calls.filter((c) => c.status === "ended");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 select-none">
+    <div className="mx-auto max-w-7xl space-y-6 select-none">
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Contas Ativas */}

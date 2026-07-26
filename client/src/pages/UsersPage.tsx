@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { UserPlus, Shield, User as UserIcon, Loader2, Trash2, Key } from "lucide-react";
+import { Users, UserPlus, Shield, User as UserIcon, Loader2, Trash2, Key, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,9 +99,64 @@ export const UsersPage = () => {
     }
   };
 
+  const adminCount = users.filter((u) => u.role === "admin").length;
+  const operatorCount = users.filter((u) => u.role === "user").length;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6 select-none">
-      <div className="flex justify-end items-center">
+    <div className="mx-auto max-w-7xl space-y-6 select-none">
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Card 1: Total Usuários */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Total de Usuários</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Users className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-foreground">{users.length}</span>
+            <span className="text-xs text-muted-foreground">cadastrados</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Contas ativas de acesso à plataforma</p>
+        </div>
+
+        {/* Card 2: Administradores */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Administradores</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Shield className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-amber-500">{adminCount}</span>
+            <span className="text-xs text-amber-500 font-medium">gestores</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Permissão total de configuração e gestão</p>
+        </div>
+
+        {/* Card 3: Operadores / Atendentes */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Operadores / Atendentes</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <UserCheck className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-blue-500">{operatorCount}</span>
+            <span className="text-xs text-blue-500 font-medium">atendentes</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Operadores de linha telefônica VoIP</p>
+        </div>
+      </div>
+
+      {/* Header Bar with Action Button */}
+      <div className="flex justify-between items-center border-b border-border/40 pb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <Users className="w-4 h-4 text-emerald-500" /> Lista de Usuários do Sistema
+        </h2>
         <Button onClick={() => setIsCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
           <UserPlus className="h-4 w-4" /> Novo Usuário
         </Button>

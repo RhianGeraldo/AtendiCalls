@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Power, QrCode, Loader2 } from "lucide-react";
+import { Smartphone, Plus, Pencil, Trash2, Power, QrCode, Loader2, CheckCircle2, AlertCircle, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ export const AccountsPage = () => {
 
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
+  const pairedSessions = sessions.filter((s) => s.paired);
+  const pendingSessions = sessions.filter((s) => !s.paired);
 
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -66,9 +68,9 @@ export const AccountsPage = () => {
     try {
       await renameSession(editingSession.id, nameToUse);
       setEditingSession(null);
-      toast.success("Sessão renomeada com sucesso!");
+      toast.success("Nome atualizado!");
     } catch (e: any) {
-      toast.error(e.message || "Erro ao renomear sessão.");
+      toast.error(e.message || "Erro ao renomear.");
     } finally {
       setRenaming(false);
     }
@@ -99,14 +101,67 @@ export const AccountsPage = () => {
   const selectedSession = sessions.find((s) => s.id === activeId) || sessions[0];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 select-none">
-      {isAdmin && (
-        <div className="flex justify-end items-center">
+    <div className="mx-auto max-w-7xl space-y-6 select-none">
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Card 1: Total de Contas */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Total de Contas</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Smartphone className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-foreground">{sessions.length}</span>
+            <span className="text-xs text-muted-foreground">instâncias</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Sessões registradas no sistema</p>
+        </div>
+
+        {/* Card 2: Sessões Operacionais */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Operacionais / Prontas</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-emerald-500">{pairedSessions.length}</span>
+            <span className="text-xs text-emerald-500 font-medium">conectadas</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Prontas para efetuar e receber chamadas</p>
+        </div>
+
+        {/* Card 3: Aguardando Pareamento */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider">Aguardando QR Code</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2">
+            <span className="text-2xl font-extrabold tracking-tight text-amber-500">{pendingSessions.length}</span>
+            <span className="text-xs text-amber-500 font-medium">pendentes</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">Necessitam de leitura do código QR</p>
+        </div>
+      </div>
+
+      {/* Header Bar with Create Action */}
+      <div className="flex justify-between items-center border-b border-border/40 pb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <Radio className="w-4 h-4 text-emerald-500 animate-pulse" /> Instâncias de WhatsApp Cadastradas
+        </h2>
+
+        {isAdmin && (
           <Button onClick={handleOpenCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm">
             <Plus className="h-4 w-4" /> Nova Sessão
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Grid of Accounts */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
