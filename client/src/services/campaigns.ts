@@ -1,8 +1,16 @@
-import { buildApiUrl, getHeaders } from "@/lib/api";
-import type { Campaign, CampaignItem, CampaignStatus, CampaignItemStatus } from "@/types/campaign";
+import { useAuth } from "@/stores/auth";
+import type { Campaign, CampaignStatus, CampaignItemStatus } from "@/types/campaign";
+
+const getHeaders = () => {
+  const token = useAuth.getState().token;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
 
 export const getCampaignsApi = async (): Promise<Campaign[]> => {
-  const res = await fetch(buildApiUrl("/api/campaigns"), { headers: getHeaders() });
+  const res = await fetch("/api/campaigns", { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao listar campanhas.");
@@ -11,7 +19,7 @@ export const getCampaignsApi = async (): Promise<Campaign[]> => {
 };
 
 export const getCampaignDetailsApi = async (id: string): Promise<Campaign> => {
-  const res = await fetch(buildApiUrl(`/api/campaigns/${id}`), { headers: getHeaders() });
+  const res = await fetch(`/api/campaigns/${id}`, { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao obter detalhes da campanha.");
@@ -28,7 +36,7 @@ export type CreateCampaignPayload = {
 };
 
 export const createCampaignApi = async (data: CreateCampaignPayload): Promise<Campaign> => {
-  const res = await fetch(buildApiUrl("/api/campaigns"), {
+  const res = await fetch("/api/campaigns", {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(data),
@@ -41,7 +49,7 @@ export const createCampaignApi = async (data: CreateCampaignPayload): Promise<Ca
 };
 
 export const updateCampaignStatusApi = async (id: string, status: CampaignStatus): Promise<void> => {
-  const res = await fetch(buildApiUrl(`/api/campaigns/${id}/status`), {
+  const res = await fetch(`/api/campaigns/${id}/status`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify({ status }),
@@ -57,7 +65,7 @@ export const updateCampaignItemApi = async (
   itemId: string,
   data: { status: CampaignItemStatus; endReason?: string; notes?: string }
 ): Promise<void> => {
-  const res = await fetch(buildApiUrl(`/api/campaigns/${campaignId}/items/${itemId}`), {
+  const res = await fetch(`/api/campaigns/${campaignId}/items/${itemId}`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(data),
@@ -68,24 +76,8 @@ export const updateCampaignItemApi = async (
   }
 };
 
-export const claimNextCampaignItemApi = async (
-  campaignId: string,
-  agentName?: string
-): Promise<{ completed: boolean; item: CampaignItem | null }> => {
-  const res = await fetch(buildApiUrl(`/api/campaigns/${campaignId}/claim-next`), {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ agentName }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "Erro ao reservar próximo contato da fila.");
-  }
-  return res.json();
-};
-
 export const deleteCampaignApi = async (id: string): Promise<void> => {
-  const res = await fetch(buildApiUrl(`/api/campaigns/${id}`), {
+  const res = await fetch(`/api/campaigns/${id}`, {
     method: "DELETE",
     headers: getHeaders(),
   });

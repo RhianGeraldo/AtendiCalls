@@ -51,7 +51,7 @@ export const useAuth = create<AuthState>()(
     }),
     {
       name: "atendicalls_auth",
-      partialize: (state) => ({ token: state.token, user: state.user }),
+      partialize: (state) => ({ token: state.token }),
     }
   )
 );

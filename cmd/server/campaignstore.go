@@ -36,7 +36,6 @@ type CampaignItem struct {
 	Phone      string             `json:"phone"`
 	PictureURL string             `json:"pictureUrl"`
 	Status     CampaignItemStatus `json:"status"`
-	CalledBy   string             `json:"calledBy,omitempty"`
 	StartedAt  *int64             `json:"startedAt,omitempty"`
 	EndedAt    *int64             `json:"endedAt,omitempty"`
 	EndReason  string             `json:"endReason,omitempty"`
@@ -99,9 +98,6 @@ func newCampaignStore(ctx context.Context, db *sql.DB) (*campaignStore, error) {
 		return nil, fmt.Errorf("failed to create campaigns tables: %w", err)
 	}
 
-	// Migration for called_by
-	_, _ = db.ExecContext(ctx, "ALTER TABLE campaign_items ADD COLUMN called_by TEXT DEFAULT ''")
-
 	return &campaignStore{db: db}, nil
 }
 
@@ -158,13 +154,13 @@ func (cs *campaignStore) getByIDUnlocked(ctx context.Context, id string) (*Campa
 		return nil, err
 	}
 
-	rows, err := cs.db.QueryContext(ctx, `SELECT id, campaign_id, contact_id, name, phone, picture_url, status, called_by, started_at, ended_at, end_reason, notes FROM campaign_items WHERE campaign_id = ? ORDER BY id ASC`, id)
+	rows, err := cs.db.QueryContext(ctx, `SELECT id, campaign_id, contact_id, name, phone, picture_url, status, started_at, ended_at, end_reason, notes FROM campaign_items WHERE campaign_id = ? ORDER BY id ASC`, id)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var item CampaignItem
 			var stAt, endAt sql.NullInt64
-			if err := rows.Scan(&item.ID, &item.CampaignID, &item.ContactID, &item.Name, &item.Phone, &item.PictureURL, &item.Status, &item.CalledBy, &stAt, &endAt, &item.EndReason, &item.Notes); err == nil {
+			if err := rows.Scan(&item.ID, &item.CampaignID, &item.ContactID, &item.Name, &item.Phone, &item.PictureURL, &item.Status, &stAt, &endAt, &item.EndReason, &item.Notes); err == nil {
 				if stAt.Valid {
 					v := stAt.Int64
 					item.StartedAt = &v
@@ -200,7 +196,16 @@ func (cs *campaignStore) List(ctx context.Context) ([]Campaign, error) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
-	query := `SELECT id, name, session_id, playbook, delay_seconds, status, created_at, updated_at FROM campaigns ORDER BY created_at DESC`
+	query := `
+	SELECT 
+		c.id, c.name, c.session_id, c.playbook, c.delay_seconds, c.status, c.created_at, c.updated_at,
+		COUNT(i.id) AS total_items,
+		COALESCE(SUM(CASE WHEN i.status IS NOT NULL AND i.status != 'pending' AND i.status != 'calling' THEN 1 ELSE 0 END), 0) AS done_items
+	FROM campaigns c
+	LEFT JOIN campaign_items i ON i.campaign_id = c.id
+	GROUP BY c.id
+	ORDER BY c.created_at DESC
+	`
 	rows, err := cs.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -210,12 +215,7 @@ func (cs *campaignStore) List(ctx context.Context) ([]Campaign, error) {
 	list := make([]Campaign, 0)
 	for rows.Next() {
 		var c Campaign
-		if err := rows.Scan(&c.ID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt); err == nil {
-			// Count items
-			var total, done int
-			_ = cs.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN status != 'pending' AND status != 'calling' THEN 1 ELSE 0 END), 0) FROM campaign_items WHERE campaign_id = ?`, c.ID).Scan(&total, &done)
-			c.TotalItems = total
-			c.DoneItems = done
+		if err := rows.Scan(&c.ID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.TotalItems, &c.DoneItems); err == nil {
 			list = append(list, c)
 		}
 	}
@@ -248,66 +248,4 @@ func (cs *campaignStore) Delete(ctx context.Context, id string) error {
 
 	_, err := cs.db.ExecContext(ctx, `DELETE FROM campaigns WHERE id = ?`, id)
 	return err
-}
-
-func (cs *campaignStore) ClaimNextItem(ctx context.Context, campaignID string, agentName string) (*CampaignItem, error) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	now := time.Now().UnixMilli()
-
-	// Find the first pending item
-	var itemID string
-	querySelect := `SELECT id FROM campaign_items WHERE campaign_id = ? AND status = 'pending' ORDER BY id ASC LIMIT 1`
-	err := cs.db.QueryRowContext(ctx, querySelect, campaignID).Scan(&itemID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			// Check if any items are still calling
-			var callingCount int
-			_ = cs.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaign_items WHERE campaign_id = ? AND status = 'calling'`, campaignID).Scan(&callingCount)
-			if callingCount == 0 {
-				// Mark campaign as completed
-				_, _ = cs.db.ExecContext(ctx, `UPDATE campaigns SET status = 'completed', updated_at = ? WHERE id = ?`, now, campaignID)
-			}
-			return nil, nil // No pending items
-		}
-		return nil, err
-	}
-
-	// Atomically claim the item for this agent
-	queryUpdate := `UPDATE campaign_items SET status = 'calling', called_by = ?, started_at = ? WHERE id = ? AND status = 'pending'`
-	res, err := cs.db.ExecContext(ctx, queryUpdate, agentName, now, itemID)
-	if err != nil {
-		return nil, err
-	}
-
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
-		// Another agent claimed it concurrently, retry!
-		return cs.ClaimNextItem(ctx, campaignID, agentName)
-	}
-
-	// Update campaign status to running if pending
-	_, _ = cs.db.ExecContext(ctx, `UPDATE campaigns SET status = 'running', updated_at = ? WHERE id = ? AND status = 'pending'`, now, campaignID)
-
-	// Fetch full claimed item details
-	var item CampaignItem
-	var stAt, endAt sql.NullInt64
-	queryItem := `SELECT id, campaign_id, contact_id, name, phone, picture_url, status, called_by, started_at, ended_at, end_reason, notes FROM campaign_items WHERE id = ?`
-	err = cs.db.QueryRowContext(ctx, queryItem, itemID).Scan(
-		&item.ID, &item.CampaignID, &item.ContactID, &item.Name, &item.Phone, &item.PictureURL, &item.Status, &item.CalledBy, &stAt, &endAt, &item.EndReason, &item.Notes,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if stAt.Valid {
-		v := stAt.Int64
-		item.StartedAt = &v
-	}
-	if endAt.Valid {
-		v := endAt.Int64
-		item.EndedAt = &v
-	}
-
-	return &item, nil
 }

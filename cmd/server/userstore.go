@@ -44,13 +44,7 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 		password_hash TEXT NOT NULL,
 		role          TEXT NOT NULL DEFAULT 'user',
 		created_at    INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS user_tokens (
-		token      TEXT PRIMARY KEY,
-		user_id    TEXT NOT NULL,
-		created_at INTEGER NOT NULL
-	);
-	`)
+	)`)
 	if err != nil {
 		return nil, fmt.Errorf("create users table: %w", err)
 	}
@@ -58,29 +52,6 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 	store := &userStore{
 		db:     db,
 		tokens: make(map[string]string),
-	}
-
-	// Pre-populate tokens and user IDs in memory at startup for zero-latency auth
-	rows, err := db.QueryContext(ctx, `SELECT token, user_id FROM user_tokens`)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var tok, uid string
-			if err := rows.Scan(&tok, &uid); err == nil {
-				store.tokens[tok] = uid
-			}
-		}
-	}
-
-	uRows, err := db.QueryContext(ctx, `SELECT id FROM users`)
-	if err == nil {
-		defer uRows.Close()
-		for uRows.Next() {
-			var uid string
-			if err := uRows.Scan(&uid); err == nil {
-				store.tokens[uid] = uid
-			}
-		}
 	}
 
 	// Seed default Admin user if database has no users
@@ -93,7 +64,6 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 			now := time.Now().UnixMilli()
 			_, _ = db.ExecContext(ctx, `INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 				id, "Administrador", "admin@admin.com", string(hash), string(RoleAdmin), now)
-			store.tokens[id] = id
 		}
 	}
 
@@ -179,10 +149,6 @@ func (s *userStore) createUser(ctx context.Context, name, email, password string
 		return nil, err
 	}
 
-	s.mu.Lock()
-	s.tokens[id] = id
-	s.mu.Unlock()
-
 	return &User{
 		ID:        id,
 		Name:      name,
@@ -235,12 +201,9 @@ func (s *userStore) createToken(userID string) string {
 	rand.Read(b)
 	tok := hex.EncodeToString(b)
 
-	now := time.Now().UnixMilli()
 	s.mu.Lock()
 	s.tokens[tok] = userID
 	s.mu.Unlock()
-
-	_, _ = s.db.ExecContext(context.Background(), `INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, userID, now)
 
 	return tok
 }
@@ -250,20 +213,7 @@ func (s *userStore) validateToken(tok string) string {
 		return ""
 	}
 	s.mu.RLock()
-	userID, ok := s.tokens[tok]
+	userID := s.tokens[tok]
 	s.mu.RUnlock()
-	if ok && userID != "" {
-		return userID
-	}
-
-	// Fallback to first user in RAM map if available
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, uid := range s.tokens {
-		if uid != "" {
-			return uid
-		}
-	}
-
-	return ""
+	return userID
 }

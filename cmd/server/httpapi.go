@@ -53,7 +53,6 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/campaigns", s.handleCampaignList)
 	mux.HandleFunc("POST /api/campaigns", s.handleCampaignCreate)
 	mux.HandleFunc("GET /api/campaigns/{id}", s.handleCampaignGet)
-	mux.HandleFunc("POST /api/campaigns/{id}/claim-next", s.handleCampaignClaimNext)
 	mux.HandleFunc("PATCH /api/campaigns/{id}/status", s.handleCampaignStatusUpdate)
 	mux.HandleFunc("PATCH /api/campaigns/{id}/items/{itemId}", s.handleCampaignItemUpdate)
 	mux.HandleFunc("DELETE /api/campaigns/{id}", s.handleCampaignDelete)
@@ -362,24 +361,15 @@ func (s *server) authUser(r *http.Request) *User {
 	} else {
 		tok = r.Header.Get("X-Client-Id")
 	}
-	if tok != "" {
-		userID := s.users.validateToken(tok)
-		if userID != "" {
-			if u, _ := s.users.getUserByID(r.Context(), userID); u != nil {
-				return u
-			}
-		}
+	if tok == "" {
+		return nil
 	}
-
-	// Single-tenant fallback: Validate any active RAM token for instant zero-latency responses
-	userID := s.users.validateToken("fallback")
-	if userID != "" {
-		if u, _ := s.users.getUserByID(r.Context(), userID); u != nil {
-			return u
-		}
+	userID := s.users.validateToken(tok)
+	if userID == "" {
+		return nil
 	}
-
-	return nil
+	u, _ := s.users.getUserByID(r.Context(), userID)
+	return u
 }
 
 func (s *server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -777,41 +767,6 @@ func (s *server) handleCampaignGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, cmp)
-}
-
-type claimNextReq struct {
-	AgentName string `json:"agentName"`
-}
-
-func (s *server) handleCampaignClaimNext(w http.ResponseWriter, r *http.Request) {
-	u := s.authUser(r)
-	if u == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Não autenticado."})
-		return
-	}
-
-	campaignId := r.PathValue("id")
-	var req claimNextReq
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	if req.AgentName == "" {
-		req.AgentName = u.Name
-		if req.AgentName == "" {
-			req.AgentName = u.Email
-		}
-	}
-
-	item, err := s.campaigns.ClaimNextItem(r.Context(), campaignId, req.AgentName)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
-	if item == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"completed": true, "item": nil})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"completed": false, "item": item})
 }
 
 func (s *server) handleCampaignStatusUpdate(w http.ResponseWriter, r *http.Request) {

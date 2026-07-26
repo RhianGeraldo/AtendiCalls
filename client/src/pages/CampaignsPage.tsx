@@ -58,10 +58,9 @@ export const CampaignsPage = () => {
     setLoading(true);
     try {
       const data = await getCampaignsApi();
-      setCampaigns(Array.isArray(data) ? data : []);
+      setCampaigns(data);
     } catch (e: any) {
       toast.error(e.message || "Erro ao carregar campanhas.");
-      setCampaigns([]);
     } finally {
       setLoading(false);
     }
@@ -79,10 +78,9 @@ export const CampaignsPage = () => {
   const fetchPlaybooks = async () => {
     try {
       const data = await getPlaybooksApi();
-      setPlaybooks(Array.isArray(data) ? data : []);
+      setPlaybooks(data);
     } catch (e) {
       console.error(e);
-      setPlaybooks([]);
     }
   };
 
@@ -116,7 +114,6 @@ export const CampaignsPage = () => {
   };
 
   const handleOpenPlaybookLibrary = () => {
-    fetchPlaybooks();
     setPlaybookLibraryOpen(true);
   };
 
@@ -266,8 +263,6 @@ export const CampaignsPage = () => {
   };
 
   const handleOpenCreateModal = () => {
-    fetchPlaybooks();
-    fetchContactsForSelection();
     setFormName("");
     setFormSessionId(activeSessions[0]?.id || "");
     setSelectedContactIds(availableContacts.map((c) => c.id)); // Select all by default
@@ -417,12 +412,9 @@ export const CampaignsPage = () => {
 
       {/* Campaigns List */}
       {loading ? (
-        <div className="py-16 text-center text-muted-foreground bg-card border border-border rounded-xl shadow-xs space-y-3 flex flex-col items-center justify-center">
-          <RefreshCw className="w-7 h-7 animate-spin text-emerald-500" />
-          <p className="text-xs">Carregando campanhas...</p>
-          <Button variant="outline" size="sm" onClick={fetchCampaigns} className="text-xs gap-1.5 border-emerald-500/30 text-emerald-600">
-            <RefreshCw className="w-3.5 h-3.5" /> Recarregar Lista
-          </Button>
+        <div className="py-16 text-center text-muted-foreground bg-card border border-border rounded-xl shadow-xs">
+          <RefreshCw className="w-7 h-7 animate-spin mx-auto mb-2 text-emerald-500" />
+          Carregando campanhas...
         </div>
       ) : campaigns.length === 0 ? (
         <div className="py-16 text-center text-muted-foreground bg-card border border-dashed border-border rounded-xl shadow-xs flex flex-col items-center justify-center gap-2">

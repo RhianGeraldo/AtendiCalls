@@ -1,8 +1,16 @@
-import { buildApiUrl, getHeaders } from "@/lib/api";
+import { useAuth } from "@/stores/auth";
 import type { Playbook } from "@/types/playbook";
 
+const getHeaders = () => {
+  const token = useAuth.getState().token;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
 export const getPlaybooksApi = async (): Promise<Playbook[]> => {
-  const res = await fetch(buildApiUrl("/api/playbooks"), { headers: getHeaders() });
+  const res = await fetch("/api/playbooks", { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao listar playbooks.");
@@ -11,7 +19,7 @@ export const getPlaybooksApi = async (): Promise<Playbook[]> => {
 };
 
 export const createPlaybookApi = async (data: Partial<Playbook>): Promise<Playbook> => {
-  const res = await fetch(buildApiUrl("/api/playbooks"), {
+  const res = await fetch("/api/playbooks", {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(data),
@@ -24,7 +32,7 @@ export const createPlaybookApi = async (data: Partial<Playbook>): Promise<Playbo
 };
 
 export const updatePlaybookApi = async (id: string, data: Partial<Playbook>): Promise<Playbook> => {
-  const res = await fetch(buildApiUrl(`/api/playbooks/${id}`), {
+  const res = await fetch(`/api/playbooks/${id}`, {
     method: "PUT",
     headers: getHeaders(),
     body: JSON.stringify(data),
@@ -37,7 +45,7 @@ export const updatePlaybookApi = async (id: string, data: Partial<Playbook>): Pr
 };
 
 export const deletePlaybookApi = async (id: string): Promise<void> => {
-  const res = await fetch(buildApiUrl(`/api/playbooks/${id}`), {
+  const res = await fetch(`/api/playbooks/${id}`, {
     method: "DELETE",
     headers: getHeaders(),
   });
