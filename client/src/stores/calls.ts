@@ -66,7 +66,12 @@ export const ensureCallsWired = (): void => {
 
 export const isMine = (call: CallSummary): boolean => {
   const authUser = useAuth.getState().user;
-  return call.owner === (authUser?.id || getClientId());
+  if (!call.owner) return false;
+  return (
+    call.owner === authUser?.id ||
+    call.owner === authUser?.name ||
+    call.owner === getClientId()
+  );
 };
 
 export const registerOwnConnection = (id: string, conn: OpenCall): void => {
