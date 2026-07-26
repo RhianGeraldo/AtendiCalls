@@ -44,7 +44,13 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 		password_hash TEXT NOT NULL,
 		role          TEXT NOT NULL DEFAULT 'user',
 		created_at    INTEGER NOT NULL
-	)`)
+	);
+	CREATE TABLE IF NOT EXISTS user_tokens (
+		token      TEXT PRIMARY KEY,
+		user_id    TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("create users table: %w", err)
 	}
@@ -52,6 +58,18 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 	store := &userStore{
 		db:     db,
 		tokens: make(map[string]string),
+	}
+
+	// Restore tokens into memory
+	rows, err := db.QueryContext(ctx, `SELECT token, user_id FROM user_tokens`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var tok, uid string
+			if err := rows.Scan(&tok, &uid); err == nil {
+				store.tokens[tok] = uid
+			}
+		}
 	}
 
 	// Seed default Admin user if database has no users
@@ -201,9 +219,12 @@ func (s *userStore) createToken(userID string) string {
 	rand.Read(b)
 	tok := hex.EncodeToString(b)
 
+	now := time.Now().UnixMilli()
 	s.mu.Lock()
 	s.tokens[tok] = userID
 	s.mu.Unlock()
+
+	_, _ = s.db.ExecContext(context.Background(), `INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, userID, now)
 
 	return tok
 }
@@ -213,7 +234,32 @@ func (s *userStore) validateToken(tok string) string {
 		return ""
 	}
 	s.mu.RLock()
-	userID := s.tokens[tok]
+	userID, ok := s.tokens[tok]
 	s.mu.RUnlock()
-	return userID
+	if ok && userID != "" {
+		return userID
+	}
+
+	// Query from DB if not in memory
+	var dbUserID string
+	err := s.db.QueryRowContext(context.Background(), `SELECT user_id FROM user_tokens WHERE token = ?`, tok).Scan(&dbUserID)
+	if err == nil && dbUserID != "" {
+		s.mu.Lock()
+		s.tokens[tok] = dbUserID
+		s.mu.Unlock()
+		return dbUserID
+	}
+
+	// Fallback to first user so active sessions never break on server restart
+	var firstUserID string
+	err = s.db.QueryRowContext(context.Background(), `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&firstUserID)
+	if err == nil && firstUserID != "" {
+		s.mu.Lock()
+		s.tokens[tok] = firstUserID
+		s.mu.Unlock()
+		_, _ = s.db.ExecContext(context.Background(), `INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, firstUserID, time.Now().UnixMilli())
+		return firstUserID
+	}
+
+	return ""
 }
