@@ -17,6 +17,8 @@ import {
   ChevronDown
 } from "lucide-react";
 import { formatPhoneBR } from "@/utils/format";
+import { parsePlaybookContent, PlaybookStage } from "@/types/playbook";
+import { Fragment } from "react";
 
 interface CampaignReportModalProps {
   campaignId: string | null;
@@ -61,8 +63,25 @@ export const CampaignReportModal = ({ campaignId, onClose }: CampaignReportModal
     let rejected = 0;
     let failed = 0;
 
-    // Funnel stats mapping: "Etapa Name" -> count
+    // Parse playbook
+    const isStagesMode = campaign.playbook?.startsWith("STG:");
+    let pbStages: PlaybookStage[] = [];
+    if (isStagesMode && campaign.playbook) {
+      try {
+        const parsed = parsePlaybookContent(campaign.playbook);
+        pbStages = parsed.stages || [];
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Initialize funnel counts for ALL stages in order
     const funnel: Record<string, number> = {};
+    if (isStagesMode) {
+      pbStages.forEach(stg => {
+        funnel[stg.title] = 0;
+      });
+    }
 
     items.forEach(it => {
       if (it.status === "pending" || it.status === "calling") pending++;
@@ -72,20 +91,32 @@ export const CampaignReportModal = ({ campaignId, onClose }: CampaignReportModal
       else if (it.status === "failed") failed++;
 
       if (it.notes) {
-        // Extract all stage occurrences from notes to see highest stage reached.
-        // The notes append multiple "[Atingiu: ...]" strings. We want the last one.
         const matches = [...it.notes.matchAll(/\[Atingiu:\s*(.+?)\]/g)];
         if (matches.length > 0) {
           const lastMatch = matches[matches.length - 1];
           if (lastMatch && lastMatch[1]) {
-            const stageName = lastMatch[1].trim();
-            funnel[stageName] = (funnel[stageName] || 0) + 1;
+            const reachedStage = lastMatch[1].trim();
+            
+            if (isStagesMode) {
+              const reachedIdx = pbStages.findIndex(s => s.title === reachedStage);
+              if (reachedIdx !== -1) {
+                // Increment count for this stage and ALL PREVIOUS stages
+                for (let i = 0; i <= reachedIdx; i++) {
+                  const stageTitle = pbStages[i].title;
+                  funnel[stageTitle] = (funnel[stageTitle] || 0) + 1;
+                }
+              }
+            } else {
+              funnel[reachedStage] = (funnel[reachedStage] || 0) + 1;
+            }
           }
         }
       }
     });
 
-    const funnelEntries = Object.entries(funnel).sort((a, b) => b[1] - a[1]); // Sort by count descending
+    const funnelEntries = isStagesMode
+      ? pbStages.map(stg => [stg.title, funnel[stg.title]]) as [string, number][] // Keep exact order from playbook
+      : Object.entries(funnel).sort((a, b) => b[1] - a[1]);
 
     return { total, pending, answered, no_answer, rejected, failed, funnelEntries };
   }, [campaign]);
@@ -227,48 +258,75 @@ export const CampaignReportModal = ({ campaignId, onClose }: CampaignReportModal
                         <th className="px-4 py-3">Contato</th>
                         <th className="px-4 py-3">Telefone</th>
                         <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Etapa</th>
                         <th className="px-4 py-3">Anotações</th>
                         <th className="px-4 py-3"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {campaign.items?.map((item) => (
-                        <tr key={item.id} className="hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-foreground">{item.name}</td>
-                          <td className="px-4 py-3 font-mono text-xs">{formatPhoneBR(item.phone)}</td>
-                          <td className="px-4 py-3">{getStatusBadge(item.status)}</td>
-                          <td className="px-4 py-3">
-                            <div className="max-w-[200px] truncate text-xs text-muted-foreground font-medium">
-                              {item.notes || "-"}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {item.notes && (
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-7 text-[10px]"
-                                onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}
-                              >
-                                Ver Tudo <ChevronDown className={`ml-1 w-3 h-3 transition-transform ${expandedRow === item.id ? 'rotate-180' : ''}`} />
-                              </Button>
+                      {campaign.items?.map((item) => {
+                        let displayNotes = item.notes || "-";
+                        let reachedStage = "-";
+                        if (item.notes) {
+                          const matches = [...item.notes.matchAll(/\[Atingiu:\s*(.+?)\]/g)];
+                          if (matches.length > 0) {
+                            const lastMatch = matches[matches.length - 1];
+                            if (lastMatch && lastMatch[1]) {
+                              reachedStage = lastMatch[1].trim();
+                            }
+                          }
+                          // Remove the tags from the notes to clean it up for display
+                          displayNotes = item.notes.replace(/\[Atingiu:\s*.+?\]/g, "").trim();
+                          if (!displayNotes) displayNotes = "-";
+                        }
+                        
+                        return (
+                          <Fragment key={item.id}>
+                            <tr className={`transition-colors ${expandedRow === item.id ? "bg-muted/10" : "hover:bg-muted/20"}`}>
+                              <td className="px-4 py-3 font-semibold text-foreground">{item.name}</td>
+                              <td className="px-4 py-3 font-mono text-xs">{formatPhoneBR(item.phone)}</td>
+                              <td className="px-4 py-3">{getStatusBadge(item.status)}</td>
+                              <td className="px-4 py-3">
+                                {reachedStage !== "-" ? (
+                                  <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-500/20">{reachedStage}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="max-w-[200px] truncate text-xs text-muted-foreground font-medium">
+                                  {displayNotes}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {(item.notes) && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 text-[10px]"
+                                    onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}
+                                  >
+                                    Ver Tudo <ChevronDown className={`ml-1 w-3 h-3 transition-transform ${expandedRow === item.id ? 'rotate-180' : ''}`} />
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                            {expandedRow === item.id && (
+                              <tr className="bg-muted/10">
+                                <td colSpan={6} className="p-4 px-6 border-t border-border/50">
+                                  <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Notas Completas</h4>
+                                  <div className="p-3 bg-background rounded-xl text-xs text-foreground whitespace-pre-wrap font-sans border border-border/50 shadow-sm">
+                                    {displayNotes}
+                                  </div>
+                                </td>
+                              </tr>
                             )}
-                          </td>
-                        </tr>
-                      ))}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
-
-                {/* Expanded Details View */}
-                {expandedRow && (
-                  <div className="p-4 bg-muted/30 border-t border-border">
-                    <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Notas Completas do Contato Selecionado</h4>
-                    <div className="p-3 bg-background rounded-xl text-xs text-foreground whitespace-pre-wrap font-sans border border-border/50">
-                      {campaign.items?.find(i => i.id === expandedRow)?.notes || "Sem anotações"}
-                    </div>
-                  </div>
-                )}
               </div>
 
             </div>
