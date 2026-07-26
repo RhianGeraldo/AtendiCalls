@@ -10,7 +10,7 @@ import { UsersPage } from "@/pages/UsersPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PhoneDialerModal } from "@/components/domain/call/PhoneDialerModal";
-import { ensureSessionsWired, useSessions } from "@/stores/sessions";
+import { ensureSessionsWired } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useTheme } from "@/stores/theme";
 import { useAuth } from "@/stores/auth";
@@ -19,7 +19,6 @@ export const App = () => {
   const theme = useTheme((s) => s.theme);
   const token = useAuth((s) => s.token);
   const user = useAuth((s) => s.user);
-  const activeId = useSessions((s) => s.activeId);
   
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
 
@@ -43,7 +42,7 @@ export const App = () => {
     <TooltipProvider delayDuration={200}>
       <AppShell activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === "dashboard" && <DashboardPage />}
-        {activeTab === "calls" && <CallsPage sid={activeId || ""} />}
+        {activeTab === "calls" && <CallsPage />}
         {activeTab === "reports" && <ReportsPage />}
         {activeTab === "accounts" && <AccountsPage />}
         {activeTab === "users" && <UsersPage />}
