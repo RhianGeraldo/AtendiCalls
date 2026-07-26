@@ -509,31 +509,29 @@ export const CampaignsPage = () => {
                 </div>
 
                 {/* Bottom Action Controls */}
-                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/60 mt-2">
+                <div className="flex items-center gap-2 pt-3 border-t border-border/60 mt-2">
                   <Button
                     onClick={() => handleStartCampaign(cmp.id)}
-                    className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold shadow-xs px-2"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold shadow-xs px-2"
                   >
-                    <Play className="w-3.5 h-3.5" /> Abrir / Executar
+                    <Play className="w-3.5 h-3.5" /> Iniciar
                   </Button>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="outline"
-                      onClick={() => setReportCampaignId(cmp.id)}
-                      className="text-xs gap-1 h-9 font-bold bg-muted/50 hover:bg-muted px-2.5"
-                    >
-                      <BarChart className="w-3.5 h-3.5 text-emerald-500" /> Relatório
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleDeleteCampaign(cmp.id, cmp.name)}
-                      className="h-9 w-9 text-rose-500 hover:bg-rose-500/10 border-rose-500/20 shrink-0"
-                      title="Excluir campanha"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => setReportCampaignId(cmp.id)}
+                    className="text-xs gap-1 h-9 font-bold bg-muted/50 hover:bg-muted px-2.5 shrink-0"
+                  >
+                    <BarChart className="w-3.5 h-3.5 text-emerald-500" /> Relatório
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => handleDeleteCampaign(cmp.id, cmp.name)}
+                    className="h-9 w-9 text-rose-500 hover:bg-rose-500/10 border-rose-500/20 shrink-0"
+                    title="Excluir campanha"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               </div>
             );
