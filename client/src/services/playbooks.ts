@@ -2,7 +2,13 @@ import { useAuth } from "@/stores/auth";
 import type { Playbook } from "@/types/playbook";
 
 const getHeaders = () => {
-  const token = useAuth.getState().token;
+  let token = useAuth.getState().token;
+  if (!token) {
+    try {
+      const raw = localStorage.getItem("atendicalls_auth");
+      if (raw) token = JSON.parse(raw)?.state?.token;
+    } catch {}
+  }
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
