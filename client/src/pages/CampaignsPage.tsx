@@ -58,9 +58,10 @@ export const CampaignsPage = () => {
     setLoading(true);
     try {
       const data = await getCampaignsApi();
-      setCampaigns(data);
+      setCampaigns(Array.isArray(data) ? data : []);
     } catch (e: any) {
       toast.error(e.message || "Erro ao carregar campanhas.");
+      setCampaigns([]);
     } finally {
       setLoading(false);
     }

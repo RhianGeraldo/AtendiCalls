@@ -1,5 +1,5 @@
 import { useAuth } from "@/stores/auth";
-import type { Campaign, CampaignStatus, CampaignItemStatus } from "@/types/campaign";
+import type { Campaign, CampaignItem, CampaignStatus, CampaignItemStatus } from "@/types/campaign";
 
 const getHeaders = () => {
   const token = useAuth.getState().token;
@@ -74,6 +74,22 @@ export const updateCampaignItemApi = async (
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao atualizar item da campanha.");
   }
+};
+
+export const claimNextCampaignItemApi = async (
+  campaignId: string,
+  agentName?: string
+): Promise<{ completed: boolean; item: CampaignItem | null }> => {
+  const res = await fetch(`/api/campaigns/${campaignId}/claim-next`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ agentName }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Erro ao reservar próximo contato da fila.");
+  }
+  return res.json();
 };
 
 export const deleteCampaignApi = async (id: string): Promise<void> => {

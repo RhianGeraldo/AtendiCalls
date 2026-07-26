@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers
+  PhoneCall, Play, Pause, X, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers, UserCheck
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,13 @@ import { useCalls } from "@/stores/calls";
 import { useSessions } from "@/stores/sessions";
 import { formatPhoneBR } from "@/utils/format";
 import { parsePlaybookContent, PlaybookStage } from "@/types/playbook";
+import { useAuth } from "@/stores/auth";
 
 export const CampaignRunnerModal = () => {
   const {
     activeCampaign,
-    currentIndex,
+    claimedItem,
+    agentSessionId,
     isOpen,
     isPaused,
     countdown,
@@ -27,13 +29,14 @@ export const CampaignRunnerModal = () => {
     setCountdown,
     setCallState,
     setNotes,
-    nextContact,
+    claimNext,
     finishCurrentItem,
   } = useCampaignRunner();
 
   const sessions = useSessions((s) => s.sessions);
   const calls = useCalls((s) => s.calls);
   const openDialer = useDialerStore((s) => s.openDialer);
+  const user = useAuth((s) => s.user);
 
   const countdownTimerRef = useRef<any>(null);
 
@@ -41,29 +44,29 @@ export const CampaignRunnerModal = () => {
   const [activeStageIdx, setActiveStageIdx] = useState(0);
   const [expandedObjectionIdx, setExpandedObjectionIdx] = useState<number | null>(null);
 
-  const currentItem = activeCampaign?.items?.[currentIndex];
-  const totalItems = activeCampaign?.items?.length || 0;
-  const progressPct = totalItems > 0 ? Math.round(((currentIndex + 1) / totalItems) * 100) : 0;
+  const totalItems = activeCampaign?.totalItems || 0;
+  const doneItems = activeCampaign?.doneItems || 0;
+  const progressPct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
 
-  const session = sessions.find((s) => s.id === activeCampaign?.sessionId);
+  const session = sessions.find((s) => s.id === (agentSessionId || activeCampaign?.sessionId));
 
   // Parse playbook stages
   const parsedPb = parsePlaybookContent(activeCampaign?.playbook || "");
   const isStagesMode = parsedPb.mode === "stages" && parsedPb.stages.length > 0;
   const currentStage: PlaybookStage | undefined = isStagesMode ? parsedPb.stages[activeStageIdx] : undefined;
 
-  // Reset stage index when current item changes
+  // Reset stage index when claimed item changes
   useEffect(() => {
     setActiveStageIdx(0);
     setExpandedObjectionIdx(null);
-  }, [currentIndex]);
+  }, [claimedItem?.id]);
 
   // Monitor live call status in useCalls
   useEffect(() => {
-    if (!isOpen || !currentItem || isPaused) return;
+    if (!isOpen || !claimedItem || isPaused) return;
 
-    // Find live call matching current item phone
-    const rawTarget = currentItem.phone.replace(/\D/g, "");
+    // Find live call matching claimed item phone
+    const rawTarget = claimedItem.phone.replace(/\D/g, "");
     const liveCall = calls.find((c) => {
       const p = c.peer.replace(/\D/g, "");
       return (p.includes(rawTarget) || rawTarget.includes(p)) && c.status !== "ended";
@@ -72,37 +75,36 @@ export const CampaignRunnerModal = () => {
     if (liveCall) {
       if (liveCall.status === "connected") {
         setCallState("connected");
-        // Clear countdown if connected
         if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         setCountdown(0);
       } else if (liveCall.status === "ringing" || liveCall.status === "starting") {
         setCallState("calling");
       }
     }
-  }, [calls, isOpen, currentItem, isPaused]);
+  }, [calls, isOpen, claimedItem, isPaused]);
 
   // Initiate call when item changes and callState is idle
   const handleDialCurrentItem = () => {
-    if (!activeCampaign || !currentItem || isPaused) return;
-    const rawTarget = currentItem.phone.replace(/\D/g, "");
+    if (!activeCampaign || !claimedItem || isPaused) return;
+    const rawTarget = claimedItem.phone.replace(/\D/g, "");
     if (!rawTarget) return;
 
     setCallState("calling");
-    openDialer(activeCampaign.sessionId, rawTarget);
+    openDialer(agentSessionId || activeCampaign.sessionId, rawTarget);
   };
 
-  // Start 5s countdown between non-answered calls
+  // Start countdown between non-answered calls
   const startNextCountdown = (delaySec: number = 5) => {
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     let remaining = delaySec;
     setCountdown(remaining);
 
-    countdownTimerRef.current = setInterval(() => {
+    countdownTimerRef.current = setInterval(async () => {
       remaining -= 1;
       setCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(countdownTimerRef.current);
-        nextContact();
+        await claimNext();
       }
     }, 1000);
   };
@@ -119,13 +121,13 @@ export const CampaignRunnerModal = () => {
     startNextCountdown(activeCampaign?.delaySeconds || 5);
   };
 
-  const handleSkipCountdownNow = () => {
+  const handleSkipCountdownNow = async () => {
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     setCountdown(0);
-    nextContact();
+    await claimNext();
   };
 
-  if (!isOpen || !activeCampaign || !currentItem) return null;
+  if (!isOpen || !activeCampaign) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={closeRunner}>
@@ -140,11 +142,12 @@ export const CampaignRunnerModal = () => {
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base text-foreground truncate leading-tight">{activeCampaign.name}</h3>
                 <Badge variant={isPaused ? "secondary" : "success"} className="text-[10px]">
-                  {isPaused ? "Pausada" : "Rodando"}
+                  {isPaused ? "Pausada" : "Em Atendimento"}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                Linha: <strong>{session?.name || activeCampaign.sessionName || "WhatsApp"}</strong> ({session?.phone || activeCampaign.sessionPhone || "Conectada"})
+              <p className="text-xs text-muted-foreground mt-0.5 truncate flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+                Agente: <strong>{user?.name || "Você"}</strong> | Linha: <strong>{session?.name || activeCampaign.sessionName || "WhatsApp"}</strong>
               </p>
             </div>
           </div>
@@ -176,97 +179,115 @@ export const CampaignRunnerModal = () => {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[480px]">
-          {/* Left Column (5/12): Contact & Call Status Engine */}
+          {/* Left Column (5/12): Contact & Lock Status Engine */}
           <div className="lg:col-span-5 p-5 border-r border-border/60 bg-muted/20 flex flex-col justify-between space-y-4">
             {/* Progress Counter Badge */}
             <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Contato {currentIndex + 1} de {totalItems}</span>
-              <span className="font-mono">{progressPct}% Concluído</span>
+              <span>{doneItems} de {totalItems} concluídos</span>
+              <span className="font-mono">{progressPct}% Geral</span>
             </div>
 
-            {/* Current Contact Info Card */}
-            <div className="bg-card border border-border/80 rounded-xl p-4 shadow-sm text-center space-y-3 my-auto">
-              <div className="h-16 w-16 mx-auto rounded-full overflow-hidden border-2 border-emerald-500/30 bg-muted flex items-center justify-center shadow-md">
-                {currentItem.pictureUrl ? (
-                  <img src={currentItem.pictureUrl} alt={currentItem.name} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full bg-emerald-500/10 text-emerald-600 font-extrabold text-xl flex items-center justify-center">
-                    {currentItem.name.charAt(0).toUpperCase()}
+            {/* Current Contact Info Card OR Finished State */}
+            {claimedItem ? (
+              <div className="bg-card border border-border/80 rounded-xl p-4 shadow-sm text-center space-y-3 my-auto">
+                <div className="h-16 w-16 mx-auto rounded-full overflow-hidden border-2 border-emerald-500/30 bg-muted flex items-center justify-center shadow-md">
+                  {claimedItem.pictureUrl ? (
+                    <img src={claimedItem.pictureUrl} alt={claimedItem.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-emerald-500/10 text-emerald-600 font-extrabold text-xl flex items-center justify-center">
+                      {claimedItem.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <h4 className="font-extrabold text-base text-foreground truncate">{claimedItem.name}</h4>
                   </div>
+                  <p className="font-mono text-xs text-muted-foreground mt-0.5">{formatPhoneBR(claimedItem.phone)}</p>
+                  <Badge variant="outline" className="mt-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                    🔒 Reservado para {user?.name || "Você"}
+                  </Badge>
+                </div>
+
+                {/* Call Status Badge */}
+                <div className="pt-1">
+                  {callState === "connected" ? (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5 font-bold px-3 py-1 text-xs animate-pulse">
+                      <CheckCircle2 className="w-4 h-4" /> Chamada Conectada / Atendida
+                    </Badge>
+                  ) : callState === "calling" ? (
+                    <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1.5 font-semibold px-3 py-1 text-xs animate-pulse">
+                      <AlertCircle className="w-4 h-4" /> Discando para o cliente...
+                    </Badge>
+                  ) : countdown > 0 ? (
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold px-3 py-1 text-xs">
+                      <Clock className="w-4 h-4 animate-spin" /> Próxima discagem em {countdown}s
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground gap-1 text-xs">
+                      Pronto para discar
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Dial Control Button */}
+                {callState === "idle" && countdown === 0 && (
+                  <Button
+                    onClick={handleDialCurrentItem}
+                    disabled={isPaused}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 mt-2 shadow-xs"
+                  >
+                    <PhoneCall className="w-4 h-4" /> Discar Agora
+                  </Button>
+                )}
+
+                {/* Countdown Skip Button */}
+                {countdown > 0 && (
+                  <Button
+                    onClick={handleSkipCountdownNow}
+                    variant="outline"
+                    className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 mt-2 text-xs"
+                  >
+                    <ChevronRight className="w-4 h-4" /> Pular Delay ({countdown}s) & Chamar Próximo
+                  </Button>
                 )}
               </div>
-
-              <div>
-                <h4 className="font-extrabold text-base text-foreground truncate">{currentItem.name}</h4>
-                <p className="font-mono text-xs text-muted-foreground mt-0.5">{formatPhoneBR(currentItem.phone)}</p>
-              </div>
-
-              {/* Call Status Badge */}
-              <div className="pt-1">
-                {callState === "connected" ? (
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5 font-bold px-3 py-1 text-xs animate-pulse">
-                    <CheckCircle2 className="w-4 h-4" /> Chamada Conectada / Atendida
-                  </Badge>
-                ) : callState === "calling" ? (
-                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1.5 font-semibold px-3 py-1 text-xs animate-pulse">
-                    <AlertCircle className="w-4 h-4" /> Discando para o cliente...
-                  </Badge>
-                ) : countdown > 0 ? (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold px-3 py-1 text-xs">
-                    <Clock className="w-4 h-4 animate-spin" /> Próxima discagem em {countdown}s
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-muted-foreground gap-1 text-xs">
-                    Pronto para discar
-                  </Badge>
-                )}
-              </div>
-
-              {/* Dial Control Button */}
-              {callState === "idle" && countdown === 0 && (
-                <Button
-                  onClick={handleDialCurrentItem}
-                  disabled={isPaused}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 mt-2 shadow-xs"
-                >
-                  <PhoneCall className="w-4 h-4" /> Discar Agora
+            ) : (
+              <div className="py-16 text-center space-y-3 bg-card border border-dashed rounded-xl p-4 my-auto">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+                <h4 className="font-extrabold text-base text-foreground">Fila de Leads Concluída!</h4>
+                <p className="text-xs text-muted-foreground">Não há mais contatos pendentes nesta campanha no momento.</p>
+                <Button onClick={async () => await claimNext()} variant="outline" size="sm" className="text-xs text-emerald-600 border-emerald-500/30">
+                  Verificar Novos Leads
                 </Button>
-              )}
-
-              {/* Countdown Skip Button */}
-              {countdown > 0 && (
-                <Button
-                  onClick={handleSkipCountdownNow}
-                  variant="outline"
-                  className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 mt-2 text-xs"
-                >
-                  <ChevronRight className="w-4 h-4" /> Pular Delay de {countdown}s & Discar Próximo
-                </Button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* End Call / Result Buttons */}
-            <div className="space-y-2 pt-2 border-t border-border/50">
-              <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block text-center">
-                Registrar Resultado do Atendimento
-              </span>
+            {claimedItem && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block text-center">
+                  Registrar Resultado do Atendimento
+                </span>
 
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  onClick={() => handleFinishAndNext("answered")}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Atendeu / Sucesso
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleFinishAndNext("no_answer")}
-                  className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 text-xs gap-1.5"
-                >
-                  <PhoneOff className="w-3.5 h-3.5" /> Não Atendeu
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={() => handleFinishAndNext("answered")}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Atendeu / Sucesso
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleFinishAndNext("no_answer")}
+                    className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10 text-xs gap-1.5"
+                  >
+                    <PhoneOff className="w-3.5 h-3.5" /> Não Atendeu
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Right Column (7/12): Interactive Playbook Stages & Script */}
