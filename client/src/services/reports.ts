@@ -1,13 +1,5 @@
-import { useAuth } from "@/stores/auth";
+import { buildApiUrl, getHeaders } from "@/lib/api";
 import type { CallHistoryResponse, CallAnalyticsResponse } from "@/types/call";
-
-const getHeaders = () => {
-  const token = useAuth.getState().token;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 export type HistoryFilterParams = {
   sessionId?: string;
@@ -33,7 +25,7 @@ export const getCallHistoryApi = async (params: HistoryFilterParams = {}): Promi
   if (params.page) query.set("page", params.page.toString());
   if (params.limit) query.set("limit", params.limit.toString());
 
-  const res = await fetch(`/api/calls/history?${query.toString()}`, { headers: getHeaders() });
+  const res = await fetch(buildApiUrl(`/api/calls/history?${query.toString()}`), { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao carregar histórico de chamadas.");
@@ -48,7 +40,7 @@ export const getCallAnalyticsApi = async (params: HistoryFilterParams = {}): Pro
   if (params.startDate) query.set("startDate", params.startDate.toString());
   if (params.endDate) query.set("endDate", params.endDate.toString());
 
-  const res = await fetch(`/api/calls/analytics?${query.toString()}`, { headers: getHeaders() });
+  const res = await fetch(buildApiUrl(`/api/calls/analytics?${query.toString()}`), { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || "Erro ao carregar relatório analítico.");
