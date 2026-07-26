@@ -2,6 +2,7 @@ package wa
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"atendicalls/internal/voip/core"
@@ -80,11 +81,49 @@ func (s *Socket) CreateParticipantNodes(ctx context.Context, devices []types.JID
 func (s *Socket) DecryptCallKey(ctx context.Context, from types.JID, encChild *waBinary.Node) ([]byte, error) {
 	typ, _ := encChild.Attrs["type"].(string)
 	isPreKey := typ == "pkmsg"
-	plaintext, _, err := s.di().DecryptDM(ctx, encChild, from, isPreKey, time.Now())
-	if err != nil {
-		return nil, err
+
+	jidsToTry := make([]types.JID, 0, 4)
+	if encFrom, ok := encChild.Attrs["from"].(string); ok && encFrom != "" {
+		if parsed, err := types.ParseJID(encFrom); err == nil {
+			jidsToTry = append(jidsToTry, parsed)
+		}
 	}
-	return signaling.DecodeCallKeyPlaintext(plaintext)
+	jidsToTry = append(jidsToTry, from)
+
+	if s.cli.Store != nil && s.cli.Store.LIDs != nil {
+		if from.Server == types.HiddenUserServer {
+			if pn, err := s.cli.Store.LIDs.GetPNForLID(ctx, from); err == nil && !pn.IsEmpty() {
+				jidsToTry = append(jidsToTry, pn)
+			}
+		} else if from.Server == types.DefaultUserServer {
+			if lid, err := s.cli.Store.LIDs.GetLIDForPN(ctx, from); err == nil && !lid.IsEmpty() {
+				jidsToTry = append(jidsToTry, lid)
+			}
+		}
+	}
+
+	var lastErr error
+	for _, targetJID := range jidsToTry {
+		plaintext, _, err := s.di().DecryptDM(ctx, encChild, targetJID, isPreKey, time.Now())
+		if err != nil && !isPreKey {
+			// Fallback: If standard DM decryption failed (e.g. old counter), try PreKey decryption
+			plaintext, _, err = s.di().DecryptDM(ctx, encChild, targetJID, true, time.Now())
+		}
+		if err == nil {
+			key, err := signaling.DecodeCallKeyPlaintext(plaintext)
+			if err == nil {
+				return key, nil
+			}
+			lastErr = err
+		} else {
+			lastErr = err
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidate JID succeeded in decrypting call key")
+	}
+	return nil, lastErr
 }
 
 func (s *Socket) GetTCToken(ctx context.Context, jid types.JID) ([]byte, error) {

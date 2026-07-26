@@ -24,8 +24,16 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 	isVideo := hasChildTag(info.InnerNode, "video")
 
 	callKey, err := signaling.DecryptCallKeyInNode(ctx, m.sock, info.InnerNode, peerJid)
-	if err != nil {
-		m.log.Error("offer decrypt call key", "err", err)
+	if (err != nil || callKey == nil) && creator != "" {
+		if creatorJid, err2 := types.ParseJID(creator); err2 == nil && creatorJid != peerJid {
+			if k, err3 := signaling.DecryptCallKeyInNode(ctx, m.sock, info.InnerNode, creatorJid); err3 == nil && k != nil {
+				callKey = k
+				err = nil
+			}
+		}
+	}
+	if err != nil || callKey == nil {
+		m.log.Error("offer decrypt call key", "err", err, "peer", peerJid, "creator", creator)
 	}
 	relays := signaling.ExtractRelayEndpoints(info.InnerNode)
 	var structured *signaling.ParsedRelayAck
