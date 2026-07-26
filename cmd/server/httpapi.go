@@ -80,6 +80,13 @@ func clientID(r *http.Request) string {
 	return r.URL.Query().Get("clientId")
 }
 
+func (s *server) getOwnerName(r *http.Request) string {
+	if u := s.authUser(r); u != nil && u.Name != "" {
+		return u.Name
+	}
+	return clientID(r)
+}
+
 func (s *server) sessionByID(w http.ResponseWriter, sid string) *Session {
 	sess, ok := s.sessions.Get(sid)
 	if !ok {
@@ -205,7 +212,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phone required"})
 		return
 	}
-	owner := clientID(r)
+	owner := s.getOwnerName(r)
 	if other := s.broker.ownerActiveCall(owner); other != "" {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "operator already on a call"})
 		return
@@ -284,7 +291,7 @@ func (s *server) doAccept(sess *Session, w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
 		return
 	}
-	owner := clientID(r)
+	owner := s.getOwnerName(r)
 	if other := s.broker.ownerActiveCall(owner); other != "" && other != id {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "operator already on a call"})
 		return
