@@ -443,16 +443,22 @@ export const CampaignsPage = () => {
                       <h4 className="font-extrabold text-base text-foreground leading-tight">{cmp.name}</h4>
                       <div className="flex items-center gap-2 mt-2">
                         {sess?.pictureUrl ? (
-                          <img src={sess.pictureUrl} alt="Session" className="w-5 h-5 rounded-full" />
+                          <img src={sess.pictureUrl} alt="Session" className="w-8 h-8 rounded-full border border-border" />
                         ) : (
-                          <div className="w-5 h-5 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                            <Smartphone className="w-3 h-3 text-blue-500" />
+                          <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                            <Smartphone className="w-4 h-4 text-blue-500" />
                           </div>
                         )}
-                        <span className="text-xs text-muted-foreground font-medium truncate">
-                          {sess?.name || cmp.sessionName || "Linha WhatsApp"}
-                          {sess?.phone ? ` • ${formatPhoneBR(sess.phone)}` : ""}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-foreground font-bold truncate">
+                            {sess?.name || cmp.sessionName || "Linha WhatsApp"}
+                          </span>
+                          {sess?.phone && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {formatPhoneBR(sess.phone)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -503,29 +509,31 @@ export const CampaignsPage = () => {
                 </div>
 
                 {/* Bottom Action Controls */}
-                <div className="flex items-center gap-2 pt-3 border-t border-border/60 mt-2">
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/60 mt-2">
                   <Button
                     onClick={() => handleStartCampaign(cmp.id)}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2 font-bold shadow-xs"
+                    className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 font-bold shadow-xs px-2"
                   >
                     <Play className="w-3.5 h-3.5" /> Abrir / Executar
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setReportCampaignId(cmp.id)}
-                    className="text-xs gap-1 h-9 font-bold bg-muted/50 hover:bg-muted"
-                  >
-                    <BarChart className="w-3.5 h-3.5 text-emerald-500" /> Relatório
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDeleteCampaign(cmp.id, cmp.name)}
-                    className="h-9 w-9 text-rose-500 hover:bg-rose-500/10 border-rose-500/20 shrink-0"
-                    title="Excluir campanha"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      onClick={() => setReportCampaignId(cmp.id)}
+                      className="text-xs gap-1 h-9 font-bold bg-muted/50 hover:bg-muted px-2.5"
+                    >
+                      <BarChart className="w-3.5 h-3.5 text-emerald-500" /> Relatório
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleDeleteCampaign(cmp.id, cmp.name)}
+                      className="h-9 w-9 text-rose-500 hover:bg-rose-500/10 border-rose-500/20 shrink-0"
+                      title="Excluir campanha"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             );
