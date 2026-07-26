@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, CheckCircle2, AlertCircle, Clock, FileText, ChevronRight, ChevronLeft, PhoneOff, MessageSquare, AlertTriangle, Layers, Mic, MicOff, Phone, Zap, Check
+  PhoneCall, Play, Pause, FileText, ChevronRight, ChevronLeft, MessageSquare, AlertTriangle, Layers, Check
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,8 @@ import { useSessions } from "@/stores/sessions";
 import { useDevices } from "@/stores/devices";
 import { useStartCall } from "@/hooks/useStartCall";
 import { useEndCall } from "@/hooks/useEndCall";
-import { formatPhoneBR } from "@/utils/format";
 import { parsePlaybookContent, PlaybookStage } from "@/types/playbook";
+import { VirtualPhonePanel } from "@/components/domain/call/VirtualPhonePanel";
 
 export const CampaignRunnerModal = () => {
   const {
@@ -44,10 +44,7 @@ export const CampaignRunnerModal = () => {
   const endCallMutation = useEndCall();
 
   // State
-  const [isMuted, setIsMuted] = useState(false);
   const [autoDial, setAutoDial] = useState(true); // Auto-dial on by default
-  const [callDuration, setCallDuration] = useState(0);
-  const durationTimerRef = useRef<any>(null);
 
   // Playbook Stage State
   const [activeStageIdx, setActiveStageIdx] = useState(0);
@@ -59,12 +56,6 @@ export const CampaignRunnerModal = () => {
   const progressPct = totalItems > 0 ? Math.round(((currentIndex + 1) / totalItems) * 100) : 0;
 
   const session = sessions.find((s) => s.id === activeCampaign?.sessionId);
-
-  const formatSec = (totalSec: number) => {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  };
 
   // Find active WebRTC call for current session & contact
   const activeCall = calls.find((c) => c.sessionId === activeCampaign?.sessionId && c.status !== "ended");
@@ -79,9 +70,6 @@ export const CampaignRunnerModal = () => {
     setActiveStageIdx(0);
     setMaxStageReachedIdx(0);
     setExpandedObjectionIdx(null);
-    setCallDuration(0);
-    setIsMuted(false);
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   }, [currentIndex]);
 
   // Keep track of highest stage reached during campaign run
@@ -98,13 +86,6 @@ export const CampaignRunnerModal = () => {
     if (activeCall) {
       if (activeCall.status === "connected") {
         setCallState("connected");
-        // Start duration timer
-        if (!durationTimerRef.current) {
-          const startTime = activeCall.startedAt || Date.now();
-          durationTimerRef.current = setInterval(() => {
-            setCallDuration(Math.floor((Date.now() - startTime) / 1000));
-          }, 1000);
-        }
         // Stop countdown if connected
         if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         setCountdown(0);
@@ -113,7 +94,6 @@ export const CampaignRunnerModal = () => {
       }
     } else if (callState === "connected" || callState === "calling") {
       setCallState("idle");
-      if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     }
   }, [activeCall, isOpen, currentItem]);
 
@@ -150,21 +130,6 @@ export const CampaignRunnerModal = () => {
     }
   }, [isOpen, autoDial, isPaused, currentItem, callState, countdown]);
 
-  // WebRTC Audio Mute toggle
-  const handleToggleMute = () => {
-    const nextMute = !isMuted;
-    setIsMuted(nextMute);
-
-    if (activeCall) {
-      const conn = useCalls.getState().ownConnections.get(activeCall.callId);
-      if (conn && conn.micStream) {
-        conn.micStream.getAudioTracks().forEach((track) => {
-          track.enabled = !nextMute;
-        });
-      }
-    }
-  };
-
   // Initiate WebRTC Call directly embedded inside Campaign Runner
   const handleDialCurrentItem = () => {
     if (!activeCampaign || !currentItem || isPaused) return;
@@ -172,7 +137,6 @@ export const CampaignRunnerModal = () => {
     if (!rawTarget) return;
 
     setCallState("calling");
-    setCallDuration(0);
 
     startCallMutation.mutate(
       { phone: rawTarget, record: false },
@@ -182,15 +146,6 @@ export const CampaignRunnerModal = () => {
         },
       }
     );
-  };
-
-  // Hangup active call
-  const handleHangupCurrentCall = () => {
-    if (activeCall && activeCampaign) {
-      endCallMutation.mutate({ sid: activeCampaign.sessionId, callId: activeCall.callId });
-    }
-    setCallState("idle");
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
   };
 
   // Start 5s countdown between contacts
@@ -291,131 +246,19 @@ export const CampaignRunnerModal = () => {
               <span className="font-mono">{progressPct}% Concluído</span>
             </div>
 
-            {/* CELULAR VIRTUAL CHASSI CONTAINER */}
-            <div className="bg-card border-2 border-border/90 rounded-3xl p-4 shadow-md text-center space-y-3 my-auto relative overflow-hidden">
-              {/* Smartphone Top Speaker Notch */}
-              <div className="flex justify-center -mt-1 mb-1">
-                <div className="h-1.5 w-16 bg-muted-foreground/30 rounded-full" />
-              </div>
-
-              {/* Call Status Badge Header */}
-              <div className="flex justify-center">
-                {callState === "connected" ? (
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5 font-bold px-3 py-1 text-xs animate-pulse">
-                    <CheckCircle2 className="w-4 h-4" /> Em Chamada ({formatSec(callDuration)})
-                  </Badge>
-                ) : callState === "calling" ? (
-                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1.5 font-semibold px-3 py-1 text-xs animate-pulse">
-                    <AlertCircle className="w-4 h-4 animate-spin" /> Discando para o cliente...
-                  </Badge>
-                ) : countdown > 0 ? (
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold px-3 py-1 text-xs">
-                    <Clock className="w-4 h-4 animate-spin" /> Próxima discagem em {countdown}s
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-muted-foreground gap-1 text-xs">
-                    Pronto para discar
-                  </Badge>
-                )}
-              </div>
-
-              {/* Contact Avatar */}
-              <div className="relative">
-                <div className={`h-16 w-16 mx-auto rounded-full overflow-hidden border-2 transition-all shadow-md flex items-center justify-center ${
-                  callState === "connected"
-                    ? "border-emerald-500 ring-4 ring-emerald-500/20 scale-105"
-                    : callState === "calling"
-                    ? "border-blue-500 ring-4 ring-blue-500/20 animate-pulse"
-                    : "border-border bg-muted"
-                }`}>
-                  {currentItem.pictureUrl ? (
-                    <img src={currentItem.pictureUrl} alt={currentItem.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full bg-emerald-500/10 text-emerald-600 font-extrabold text-xl flex items-center justify-center">
-                      {currentItem.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Contact Name & Phone */}
-              <div>
-                <h4 className="font-extrabold text-base text-foreground truncate">{currentItem.name}</h4>
-                <p className="font-mono text-xs text-muted-foreground mt-0.5">{formatPhoneBR(currentItem.phone)}</p>
-              </div>
-
-              {/* EMBEDDED CALL CONTROLS */}
-              {callState === "connected" || callState === "calling" ? (
-                <div className="space-y-3 pt-2 border-t border-border/50">
-                  <div className="flex items-center justify-center gap-3">
-                    {/* Mute Mic Button (WORKING WEBRTC MUTE) */}
-                    <Button
-                      type="button"
-                      variant={isMuted ? "destructive" : "outline"}
-                      size="icon"
-                      onClick={handleToggleMute}
-                      className="h-10 w-10 rounded-full shadow-xs transition-all"
-                      title={isMuted ? "Desmudar microfone" : "Mutar microfone"}
-                    >
-                      {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-emerald-600" />}
-                    </Button>
-
-                    {/* Hangup Call Button */}
-                    <Button
-                      type="button"
-                      onClick={handleHangupCurrentCall}
-                      className="h-10 px-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold gap-2 shadow-md text-xs"
-                    >
-                      <PhoneOff className="w-4 h-4" /> Desligar Chamada
-                    </Button>
-                  </div>
-                </div>
-              ) : countdown > 0 ? (
-                /* COUNTDOWN BUTTON */
-                <Button
-                  onClick={handleSkipCountdownNow}
-                  variant="outline"
-                  className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 text-xs font-bold py-4"
-                >
-                  <ChevronRight className="w-4 h-4" /> Pular Delay de {countdown}s & Discar Próximo
-                </Button>
-              ) : isPaused ? (
-                /* PAUSED / INITIAL START BUTTON */
-                <Button
-                  onClick={resumeRunner}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold gap-2 py-5 text-xs shadow-lg rounded-xl"
-                >
-                  <Play className="w-4 h-4 fill-white" /> Iniciar Disparo de Ligações
-                </Button>
-              ) : (
-                /* IDLE DIAL BUTTON */
-                <Button
-                  onClick={handleDialCurrentItem}
-                  disabled={startCallMutation.isPending}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 py-5 text-xs shadow-md rounded-xl"
-                >
-                  <Phone className="w-4 h-4" />
-                  {startCallMutation.isPending ? "Iniciando Chamada..." : "Discar Agora"}
-                </Button>
-              )}
-
-              {/* DISCAGEM AUTOMÁTICA SWITCH (MOVED BELOW DIAL BUTTON) */}
-              <div className="pt-2 border-t border-border/40 flex items-center justify-between px-1 text-xs">
-                <div className="flex items-center gap-1.5 text-muted-foreground font-semibold">
-                  <Zap className={`w-3.5 h-3.5 ${autoDial ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground"}`} />
-                  <span>Discagem Automática:</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAutoDial(!autoDial)}
-                  className={`px-2.5 py-1 rounded-md font-extrabold transition-all text-[11px] ${
-                    autoDial ? "bg-emerald-600 text-white shadow-xs" : "bg-muted text-muted-foreground border border-border"
-                  }`}
-                >
-                  {autoDial ? "LIGADA" : "DESLIGADA"}
-                </button>
-              </div>
-            </div>
+            {/* AUTHENTIC CELULAR VIRTUAL PANEL */}
+            <VirtualPhonePanel
+              sessionId={activeCampaign.sessionId}
+              phone={currentItem.phone}
+              contactName={currentItem.name}
+              pictureUrl={currentItem.pictureUrl}
+              isPaused={isPaused}
+              onResume={resumeRunner}
+              countdown={countdown}
+              onSkipCountdown={handleSkipCountdownNow}
+              autoDial={autoDial}
+              setAutoDial={setAutoDial}
+            />
 
             {/* MARCADOR DE ETAPA ALCANÇADA PELO CLIENTE (REGISTRO AUTOMÁTICO DA ETAPA) */}
             {isStagesMode && (
