@@ -8,7 +8,7 @@ import { useAuth } from "@/stores/auth";
 export const LoginPage = () => {
   const login = useAuth((s) => s.login);
 
-  const [email, setEmail] = useState("admin@atendicalls.com");
+  const [email, setEmail] = useState("admin@admin.com");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -90,7 +90,7 @@ export const LoginPage = () => {
         {/* Footer info */}
         <div className="border-t border-muted/50 pt-4 text-center text-[11px] text-muted-foreground">
           <p>Credenciais Padrão Admin:</p>
-          <p className="font-mono text-foreground font-medium">admin@atendicalls.com / admin123</p>
+          <p className="font-mono text-foreground font-medium">admin@admin.com / admin123</p>
         </div>
       </div>
     </div>
