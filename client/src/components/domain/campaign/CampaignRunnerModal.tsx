@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { 
-  PhoneCall, Play, Pause, FileText, ChevronRight, ChevronLeft, MessageSquare, AlertTriangle, Layers, Check
+  PhoneCall, Play, Pause, FileText, ChevronRight, ChevronLeft, MessageSquare, AlertTriangle, Layers
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -238,60 +238,29 @@ export const CampaignRunnerModal = () => {
 
         {/* Main Content Grid (Fixed Height Container) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden">
-          {/* Left Column (5/12): SOFTPHONE / CELULAR VIRTUAL & STAGE PROGRESS */}
-          <div className="lg:col-span-5 p-4 border-r border-border/60 bg-muted/20 flex flex-col justify-between space-y-3 overflow-y-auto">
+          {/* Left Column (5/12): FULL-SIZE AUTHENTIC CELULAR VIRTUAL (SOFTPHONE) */}
+          <div className="lg:col-span-5 p-3.5 border-r border-border/60 bg-muted/20 flex flex-col justify-between overflow-hidden">
             {/* Progress Counter Badge */}
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
+            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold mb-2 shrink-0">
               <span>Contato {currentIndex + 1} de {totalItems}</span>
               <span className="font-mono">{progressPct}% Concluído</span>
             </div>
 
-            {/* AUTHENTIC CELULAR VIRTUAL PANEL */}
-            <VirtualPhonePanel
-              sessionId={activeCampaign.sessionId}
-              phone={currentItem.phone}
-              contactName={currentItem.name}
-              pictureUrl={currentItem.pictureUrl}
-              isPaused={isPaused}
-              onResume={resumeRunner}
-              countdown={countdown}
-              onSkipCountdown={handleSkipCountdownNow}
-              autoDial={autoDial}
-              setAutoDial={setAutoDial}
-            />
-
-            {/* MARCADOR DE ETAPA ALCANÇADA PELO CLIENTE (REGISTRO AUTOMÁTICO DA ETAPA) */}
-            {isStagesMode && (
-              <div className="space-y-2 pt-2 border-t border-border/50">
-                <span className="text-[11px] text-muted-foreground font-bold uppercase tracking-wider block text-center">
-                  🎯 Etapa Alcançada pelo Cliente
-                </span>
-
-                <div className="flex flex-wrap items-center justify-center gap-1">
-                  {parsedPb.stages.map((stg, sIdx) => {
-                    const isReached = sIdx <= maxStageReachedIdx;
-                    return (
-                      <button
-                        key={sIdx}
-                        type="button"
-                        onClick={() => {
-                          setActiveStageIdx(sIdx);
-                          setMaxStageReachedIdx(sIdx);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
-                          isReached
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                            : "bg-background text-muted-foreground border-border hover:border-emerald-500/40"
-                        }`}
-                      >
-                        {isReached && <Check className="w-3 h-3 inline mr-1" />}
-                        {sIdx + 1}. {stg.title.split("(")[0].trim()}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {/* FULL-SIZE AUTHENTIC CELULAR VIRTUAL */}
+            <div className="flex-1 overflow-hidden">
+              <VirtualPhonePanel
+                sessionId={activeCampaign.sessionId}
+                phone={currentItem.phone}
+                contactName={currentItem.name}
+                pictureUrl={currentItem.pictureUrl}
+                isPaused={isPaused}
+                onResume={resumeRunner}
+                countdown={countdown}
+                onSkipCountdown={handleSkipCountdownNow}
+                autoDial={autoDial}
+                setAutoDial={setAutoDial}
+              />
+            </div>
           </div>
 
           {/* Right Column (7/12): FIXED HEIGHT STORIES PLAYBOOK */}
@@ -346,11 +315,11 @@ export const CampaignRunnerModal = () => {
                   </div>
                 )}
 
-                {/* 3. ACTIVE STAGE SCRIPT BOX (FIXED HEIGHT TO PREVENT MODAL RESIZING) */}
+                {/* 3. ACTIVE STAGE SCRIPT BOX (EXPANDED READING AREA) */}
                 {currentStage && (
                   <div className="flex-1 flex flex-col justify-between space-y-2 overflow-hidden">
-                    {/* Fixed Height Text Container */}
-                    <div className="h-[150px] overflow-y-auto bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
+                    {/* Reading Container */}
+                    <div className="flex-1 min-h-[160px] overflow-y-auto bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3.5 text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
                       {currentStage.script}
                     </div>
 
@@ -415,7 +384,7 @@ export const CampaignRunnerModal = () => {
               </div>
             ) : (
               /* PLAIN TEXT MODE */
-              <div className="flex-1 overflow-auto bg-muted/40 border border-border/60 rounded-xl p-3 space-y-2 max-h-[260px]">
+              <div className="flex-1 overflow-auto bg-muted/40 border border-border/60 rounded-xl p-3 space-y-2 max-h-[280px]">
                 {activeCampaign.playbook ? (
                   <div className="text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
                     {activeCampaign.playbook}

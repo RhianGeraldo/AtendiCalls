@@ -219,61 +219,59 @@ export const VirtualPhonePanel = ({
   const activeSession = sessions.find((s) => s.id === currentSid);
 
   return (
-    <div className="w-full h-full max-w-[340px] mx-auto rounded-3xl p-4 border-2 border-border bg-card text-foreground flex flex-col justify-between shadow-lg select-none relative overflow-hidden">
+    <div className="w-full h-full rounded-3xl p-5 border-2 border-border bg-card text-foreground flex flex-col justify-between shadow-xl select-none relative overflow-hidden">
+      {/* Smartphone Speaker Notch */}
+      <div className="flex justify-center -mt-2 mb-2">
+        <div className="h-1.5 w-16 bg-muted-foreground/30 rounded-full" />
+      </div>
+
       {/* Top Header Bar */}
-      <div className="flex flex-col gap-1 pb-2 border-b border-muted/40 shrink-0">
-        <div className="flex justify-center -mt-1 opacity-50">
-          <div className="h-1.5 w-14 bg-muted-foreground/40 rounded-full" />
-        </div>
+      <div className="flex items-center justify-between border-b border-muted/40 pb-2.5 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <PhoneCall className="h-4 w-4" />
+          </div>
 
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <PhoneCall className="h-3.5 w-3.5" />
-            </div>
-
-            {/* Instance Name Badge */}
-            <div className="flex-1 min-w-0">
-              <span className="text-xs font-bold text-foreground truncate block">
-                {activeSession?.name || "WhatsApp"}
-              </span>
-              <span className="text-[10px] text-muted-foreground font-mono truncate block">
-                {activeSession?.phone ? formatPhoneBR(activeSession.phone) : "Conectado"}
-              </span>
-            </div>
+          <div className="min-w-0">
+            <span className="text-xs font-extrabold text-foreground truncate block">
+              {activeSession?.name || "WhatsApp"}
+            </span>
+            <span className="text-[11px] text-muted-foreground font-mono truncate block">
+              {activeSession?.phone ? formatPhoneBR(activeSession.phone) : "Conectado"}
+            </span>
           </div>
         </div>
       </div>
 
       {/* --- CELULAR VIRTUAL BODY VIEW --- */}
-      <div className="flex-1 flex flex-col items-center justify-between py-3 text-center">
+      <div className="flex-1 flex flex-col items-center justify-between py-4 text-center">
         {/* Header Tag & Recording Indicator */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground bg-muted/50 px-2.5 py-0.5 rounded-full">
+          <span className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground bg-muted/60 px-3 py-0.5 rounded-full">
             Whatsapp Audio
           </span>
           {isRecording && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 animate-pulse bg-red-500/10 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[11px] font-bold text-red-500 animate-pulse bg-red-500/10 px-2.5 py-0.5 rounded-full">
               <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> REC
             </span>
           )}
         </div>
 
         {/* Avatar & Pulse Ring */}
-        <div className="relative flex items-center justify-center my-2">
+        <div className="relative flex items-center justify-center my-3">
           <div
-            className={`flex h-20 w-20 overflow-hidden items-center justify-center rounded-full border-2 bg-muted/30 shadow-md ${
+            className={`flex h-24 w-24 overflow-hidden items-center justify-center rounded-full border-2 bg-muted/30 shadow-md ${
               activeCall?.status === "ringing" || activeCall?.status === "starting"
                 ? "animate-pulse border-amber-500/50 bg-amber-500/10 text-amber-500"
                 : activeCall?.status === "connected"
-                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
-                : "border-muted text-muted-foreground"
+                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500 scale-105"
+                : "border-border bg-muted"
             }`}
           >
             {pictureUrl ? (
               <img src={pictureUrl} alt={contactName} className="h-full w-full object-cover" />
             ) : (
-              <User className="h-10 w-10 text-emerald-600" />
+              <User className="h-12 w-12 text-emerald-600" />
             )}
           </div>
           {(activeCall?.status === "ringing" || activeCall?.status === "starting") && (
@@ -286,23 +284,23 @@ export const VirtualPhonePanel = ({
 
         {/* Contact Info & Call Status */}
         <div className="space-y-1 w-full px-2">
-          <h3 className="text-base font-extrabold tracking-tight text-foreground truncate">
+          <h3 className="text-lg font-extrabold tracking-tight text-foreground truncate">
             {contactName}
           </h3>
           <p className="text-xs text-muted-foreground font-mono">
             {formattedDisplay}
           </p>
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 pt-1">
             {activeCall ? (
-              <Badge variant={statusVariant[activeCall.status as CallStatus]} className="px-2.5 py-0.5 text-[11px] font-medium">
+              <Badge variant={statusVariant[activeCall.status as CallStatus]} className="px-3 py-0.5 text-xs font-semibold">
                 {statusLabel[activeCall.status as CallStatus] || activeCall.status}
               </Badge>
             ) : countdown > 0 ? (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1 text-[11px] font-bold">
-                <Clock className="w-3 h-3 animate-spin" /> Próxima discagem em {countdown}s
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1 text-xs font-bold">
+                <Clock className="w-3.5 h-3.5 animate-spin" /> Próxima discagem em {countdown}s
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-muted-foreground text-[11px]">
+              <Badge variant="outline" className="text-muted-foreground text-xs">
                 Pronto para discar
               </Badge>
             )}
@@ -317,10 +315,10 @@ export const VirtualPhonePanel = ({
 
         {/* Live Audio Waveform Meter */}
         {activeCall?.status === "connected" && (
-          <div className="w-full px-4 space-y-1 my-1">
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground font-medium">
-              <span className="flex items-center gap-1">
-                <Radio className="h-3 w-3 animate-pulse text-emerald-500" /> Áudio ao vivo
+          <div className="w-full px-4 space-y-1 my-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+              <span className="flex items-center gap-1.5">
+                <Radio className="h-3.5 w-3.5 animate-pulse text-emerald-500" /> Áudio ao vivo
               </span>
               <span>{isMuted ? "Silenciado" : "Ativo"}</span>
             </div>
@@ -337,20 +335,20 @@ export const VirtualPhonePanel = ({
 
         {/* CALL CONTROL BUTTONS */}
         {activeCall ? (
-          <div className="flex items-center justify-center gap-4 w-full pt-2">
+          <div className="flex items-center justify-center gap-5 w-full pt-2">
             {/* Mute Button */}
             <button
               type="button"
               onClick={toggleMute}
               disabled={activeCall.status !== "connected"}
-              className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all ${
+              className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
                 isMuted
                   ? "bg-slate-800 text-white border-slate-800 shadow-md"
                   : "bg-muted/50 hover:bg-muted text-foreground border-muted-foreground/20"
               } disabled:opacity-40 disabled:pointer-events-none`}
               title={isMuted ? "Desmutar Microfone" : "Silenciar Microfone"}
             >
-              {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4 text-emerald-600" />}
+              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5 text-emerald-600" />}
             </button>
 
             {/* Record Button */}
@@ -358,14 +356,14 @@ export const VirtualPhonePanel = ({
               type="button"
               onClick={toggleRecording}
               disabled={activeCall.status !== "connected"}
-              className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all ${
+              className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
                 isRecording
                   ? "bg-red-600 text-white border-red-600 shadow-md animate-pulse"
                   : "bg-muted/50 hover:bg-muted text-red-500 border-muted-foreground/20"
               } disabled:opacity-40 disabled:pointer-events-none`}
               title={isRecording ? "Parar Gravação" : "Gravar Chamada"}
             >
-              {isRecording ? <Square className="h-4 w-4 fill-white" /> : <Disc className="h-4 w-4" />}
+              {isRecording ? <Square className="h-5 w-5 fill-white" /> : <Disc className="h-5 w-5" />}
             </button>
 
             {/* Hangup Button */}
@@ -373,10 +371,10 @@ export const VirtualPhonePanel = ({
               type="button"
               onClick={handleHangup}
               disabled={endCall.isPending}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
               title="Finalizar Chamada"
             >
-              <PhoneOff className="h-5 w-5" />
+              <PhoneOff className="h-6 w-6" />
             </button>
           </div>
         ) : countdown > 0 ? (
@@ -385,7 +383,7 @@ export const VirtualPhonePanel = ({
             type="button"
             onClick={onSkipCountdown}
             variant="outline"
-            className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-1.5 text-xs font-bold py-4 rounded-xl"
+            className="w-full border-amber-500/30 text-amber-600 hover:bg-amber-500/10 gap-2 text-xs font-bold py-5 rounded-xl"
           >
             <ChevronRight className="w-4 h-4" /> Pular Delay de {countdown}s
           </Button>
@@ -394,7 +392,7 @@ export const VirtualPhonePanel = ({
           <Button
             type="button"
             onClick={onResume}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold gap-2 py-4 text-xs shadow-md rounded-xl"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold gap-2 py-5 text-xs shadow-md rounded-xl"
           >
             <Play className="w-4 h-4 fill-white" /> Iniciar Disparo
           </Button>
@@ -404,7 +402,7 @@ export const VirtualPhonePanel = ({
             type="button"
             onClick={handleCall}
             disabled={startCall.isPending}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 py-4 text-xs shadow-md rounded-xl"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 py-5 text-xs shadow-md rounded-xl"
           >
             <Phone className="w-4 h-4" />
             {startCall.isPending ? "Iniciando..." : "Discar Agora"}
@@ -416,7 +414,7 @@ export const VirtualPhonePanel = ({
 
       {/* DISCAGEM AUTOMÁTICA SWITCH FOOTER */}
       {setAutoDial && (
-        <div className="pt-2 border-t border-border/40 flex items-center justify-between px-1 text-xs shrink-0">
+        <div className="pt-2.5 border-t border-border/40 flex items-center justify-between px-1 text-xs shrink-0">
           <div className="flex items-center gap-1.5 text-muted-foreground font-semibold">
             <Zap className={`w-3.5 h-3.5 ${autoDial ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground"}`} />
             <span>Discagem Automática:</span>
@@ -424,7 +422,7 @@ export const VirtualPhonePanel = ({
           <button
             type="button"
             onClick={() => setAutoDial(!autoDial)}
-            className={`px-2 py-0.5 rounded font-extrabold transition-all text-[10px] ${
+            className={`px-3 py-1 rounded-md font-extrabold transition-all text-xs ${
               autoDial ? "bg-emerald-600 text-white shadow-xs" : "bg-muted text-muted-foreground border border-border"
             }`}
           >
