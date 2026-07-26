@@ -176,7 +176,14 @@ export const CampaignRunnerModal = () => {
     }
 
     await finishCurrentItem(status);
-    startNextCountdown(activeCampaign?.delaySeconds || 5);
+    
+    const isLast = currentIndex >= (activeCampaign?.items?.length || 0) - 1;
+    if (isLast) {
+      pauseRunner();
+      nextContact();
+    } else {
+      startNextCountdown(activeCampaign?.delaySeconds || 5);
+    }
   };
 
   const handleSkipCountdownNow = () => {
