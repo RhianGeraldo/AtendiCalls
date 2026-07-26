@@ -554,6 +554,16 @@ func (s *server) handleCallAnalytics(w http.ResponseWriter, r *http.Request) {
 		EndDate:   endDt,
 	}
 
+	if s.broker != nil && s.calls != nil {
+		s.broker.mu.RLock()
+		for _, c := range s.broker.calls {
+			if c != nil {
+				_ = s.calls.SaveOrUpdate(r.Context(), *c)
+			}
+		}
+		s.broker.mu.RUnlock()
+	}
+
 	analytics, err := s.calls.GetAnalytics(r.Context(), filter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

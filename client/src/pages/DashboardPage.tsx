@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   PhoneCall,
+  PhoneIncoming,
   PhoneOutgoing,
   Clock,
   CheckCircle2,
@@ -38,10 +39,142 @@ export const DashboardPage = () => {
     fetchAnalytics();
   }, [calls.length]);
 
-  const summary = analytics?.summary;
-  const byAgent = analytics?.byAgent || [];
-  const bySession = analytics?.bySession || [];
-  const byDaily = analytics?.byDaily || [];
+  // Fallback summary computation
+  const summary = useMemo(() => {
+    if (analytics?.summary && analytics.summary.totalCalls > 0) {
+      return analytics.summary;
+    }
+    const totalCalls = calls.length;
+    const completedCalls = calls.filter((c) => c.connectedAt || c.status === "connected").length;
+    const missedCalls = calls.filter((c) => c.status === "ended" && !c.connectedAt).length;
+    const rejectedCalls = calls.filter((c) => c.endReason?.includes("declined")).length;
+    const inboundCount = calls.filter((c) => c.direction === "inbound").length;
+    const outboundCount = calls.filter((c) => c.direction === "outbound").length;
+    
+    let totalDur = 0;
+    let countDur = 0;
+    calls.forEach((c) => {
+      if (c.connectedAt && c.endedAt) {
+        totalDur += Math.max(0, Math.floor((c.endedAt - c.connectedAt) / 1000));
+        countDur++;
+      }
+    });
+
+    const avgDurationSec = countDur > 0 ? Math.floor(totalDur / countDur) : 0;
+    const answerRate = totalCalls > 0 ? (completedCalls / totalCalls) * 100 : 0;
+
+    return {
+      totalCalls,
+      completedCalls,
+      missedCalls,
+      rejectedCalls,
+      inboundCount,
+      outboundCount,
+      totalDurationSec: totalDur,
+      avgDurationSec,
+      avgWaitSec: 0,
+      answerRate,
+    };
+  }, [analytics, calls]);
+
+  // Fallback agent performance computation
+  const byAgent = useMemo(() => {
+    if (analytics?.byAgent && analytics.byAgent.length > 0) {
+      return analytics.byAgent;
+    }
+    const map = new Map<string, { owner: string; totalCalls: number; completedCalls: number; totalDurationSec: number }>();
+    calls.forEach((c) => {
+      const owner = c.owner || "Sem Agente";
+      const item = map.get(owner) || { owner, totalCalls: 0, completedCalls: 0, totalDurationSec: 0 };
+      item.totalCalls++;
+      if (c.connectedAt || c.status === "connected") {
+        item.completedCalls++;
+        if (c.connectedAt && c.endedAt) {
+          item.totalDurationSec += Math.max(0, Math.floor((c.endedAt - c.connectedAt) / 1000));
+        }
+      }
+      map.set(owner, item);
+    });
+
+    return Array.from(map.values()).map((ag) => ({
+      ...ag,
+      avgDurationSec: ag.completedCalls > 0 ? Math.floor(ag.totalDurationSec / ag.completedCalls) : 0,
+      answerRate: ag.totalCalls > 0 ? (ag.completedCalls / ag.totalCalls) * 100 : 0,
+    }));
+  }, [analytics, calls]);
+
+  // Fallback session traffic distribution computation
+  const bySession = useMemo(() => {
+    if (analytics?.bySession && analytics.bySession.length > 0) {
+      return analytics.bySession;
+    }
+    const map = new Map<string, { sessionId: string; sessionName?: string; sessionPhone?: string; sessionPictureUrl?: string; totalCalls: number; completedCalls: number; missedCalls: number; totalDur: number }>();
+    calls.forEach((c) => {
+      const sid = c.sessionId;
+      const sessStore = sessions.find((s) => s.id === sid);
+      const item = map.get(sid) || {
+        sessionId: sid,
+        sessionName: c.sessionName || sessStore?.name || "WhatsApp",
+        sessionPhone: c.sessionPhone || sessStore?.phone || sid.slice(0, 8),
+        sessionPictureUrl: c.sessionPictureUrl || sessStore?.pictureUrl,
+        totalCalls: 0,
+        completedCalls: 0,
+        missedCalls: 0,
+        totalDur: 0,
+      };
+      item.totalCalls++;
+      if (c.connectedAt || c.status === "connected") {
+        item.completedCalls++;
+        if (c.connectedAt && c.endedAt) {
+          item.totalDur += Math.max(0, Math.floor((c.endedAt - c.connectedAt) / 1000));
+        }
+      } else {
+        item.missedCalls++;
+      }
+      map.set(sid, item);
+    });
+
+    return Array.from(map.values()).map((sm) => ({
+      ...sm,
+      avgDurationSec: sm.completedCalls > 0 ? Math.floor(sm.totalDur / sm.completedCalls) : 0,
+      answerRate: sm.totalCalls > 0 ? (sm.completedCalls / sm.totalCalls) * 100 : 0,
+    }));
+  }, [analytics, calls, sessions]);
+
+  // Fallback daily volume computation
+  const byDaily = useMemo(() => {
+    if (analytics?.byDaily && analytics.byDaily.length > 0) {
+      return analytics.byDaily;
+    }
+    const map = new Map<string, { date: string; totalCalls: number; completedCalls: number; inboundCount: number; outboundCount: number; totalDur: number }>();
+    calls.forEach((c) => {
+      if (!c.startedAt) return;
+      const d = new Date(c.startedAt);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+
+      const item = map.get(dateKey) || { date: dateKey, totalCalls: 0, completedCalls: 0, inboundCount: 0, outboundCount: 0, totalDur: 0 };
+      item.totalCalls++;
+      if (c.direction === "inbound") item.inboundCount++;
+      if (c.direction === "outbound") item.outboundCount++;
+      if (c.connectedAt || c.status === "connected") {
+        item.completedCalls++;
+        if (c.connectedAt && c.endedAt) {
+          item.totalDur += Math.max(0, Math.floor((c.endedAt - c.connectedAt) / 1000));
+        }
+      }
+      map.set(dateKey, item);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((dm) => ({
+        ...dm,
+        avgDurationSec: dm.completedCalls > 0 ? Math.floor(dm.totalDur / dm.completedCalls) : 0,
+      }));
+  }, [analytics, calls]);
 
   const formatDuration = (sec?: number) => {
     if (!sec || sec <= 0) return "0s";
@@ -156,11 +289,11 @@ export const DashboardPage = () => {
             </div>
 
             <div className="flex items-center gap-3 text-xs font-medium">
-              <span className="flex items-center gap-1 text-emerald-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> 📥 Entrada
+              <span className="flex items-center gap-1 text-emerald-500 font-semibold">
+                <PhoneIncoming className="w-3.5 h-3.5" /> Entrada
               </span>
-              <span className="flex items-center gap-1 text-rose-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block" /> 📤 Saída
+              <span className="flex items-center gap-1 text-rose-500 font-semibold">
+                <PhoneOutgoing className="w-3.5 h-3.5" /> Saída
               </span>
             </div>
           </div>
