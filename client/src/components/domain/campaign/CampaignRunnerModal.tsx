@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCampaignRunner } from "@/stores/campaignRunner";
 import { useCalls } from "@/stores/calls";
-import { useSessions } from "@/stores/sessions";
 import { useDevices } from "@/stores/devices";
 import { useStartCall } from "@/hooks/useStartCall";
 import { useEndCall } from "@/hooks/useEndCall";
@@ -33,7 +32,6 @@ export const CampaignRunnerModal = () => {
     finishCurrentItem,
   } = useCampaignRunner();
 
-  const sessions = useSessions((s) => s.sessions);
   const calls = useCalls((s) => s.calls);
   const micId = useDevices((s) => s.micId);
 
@@ -54,8 +52,6 @@ export const CampaignRunnerModal = () => {
   const currentItem = activeCampaign?.items?.[currentIndex];
   const totalItems = activeCampaign?.items?.length || 0;
   const progressPct = totalItems > 0 ? Math.round(((currentIndex + 1) / totalItems) * 100) : 0;
-
-  const session = sessions.find((s) => s.id === activeCampaign?.sessionId);
 
   // Find active WebRTC call for current session & contact
   const activeCall = calls.find((c) => c.sessionId === activeCampaign?.sessionId && c.status !== "ended");
@@ -208,9 +204,6 @@ export const CampaignRunnerModal = () => {
                   {isPaused ? "Pausada" : "Rodando"}
                 </Badge>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                Linha: <strong>{session?.name || activeCampaign.sessionName || "WhatsApp"}</strong> ({session?.phone || activeCampaign.sessionPhone || "Conectada"})
-              </p>
             </div>
           </div>
 
