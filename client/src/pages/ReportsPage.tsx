@@ -108,49 +108,6 @@ export const ReportsPage = () => {
 
   return (
     <div className="flex flex-col gap-5 p-6 max-w-7xl mx-auto w-full h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Top Action Bar: Period Selector & Refresh */}
-      <div className="flex justify-end items-center gap-2 shrink-0">
-        {/* Período Select */}
-        <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
-          <button
-            onClick={() => { setPeriod("today"); setPage(1); }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-              period === "today" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Hoje
-          </button>
-            <button
-              onClick={() => { setPeriod("7d"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                period === "7d" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              7 Dias
-            </button>
-            <button
-              onClick={() => { setPeriod("30d"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                period === "30d" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              30 Dias
-            </button>
-            <button
-              onClick={() => { setPeriod("all"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                period === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Tudo
-            </button>
-          </div>
-
-          <Button variant="outline" size="icon" onClick={fetchData} title="Atualizar dados">
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         {/* Card 1: Total Chamadas */}
@@ -237,7 +194,7 @@ export const ReportsPage = () => {
       {/* Filters & History Table Container */}
       <div className="bg-card border border-border rounded-xl shadow-sm flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Filter Bar */}
-        <div className="p-4 border-b border-border bg-muted/30 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+        <div className="p-4 border-b border-border bg-muted/30 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shrink-0">
           <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -250,6 +207,43 @@ export const ReportsPage = () => {
           </form>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Período Select Pill */}
+            <div className="flex items-center bg-muted rounded-lg p-1 border border-border h-9">
+              <button
+                onClick={() => { setPeriod("today"); setPage(1); }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  period === "today" ? "bg-background text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Hoje
+              </button>
+              <button
+                onClick={() => { setPeriod("7d"); setPage(1); }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  period === "7d" ? "bg-background text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                7 Dias
+              </button>
+              <button
+                onClick={() => { setPeriod("30d"); setPage(1); }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  period === "30d" ? "bg-background text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                30 Dias
+              </button>
+              <button
+                onClick={() => { setPeriod("all"); setPage(1); }}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  period === "all" ? "bg-background text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Tudo
+              </button>
+            </div>
+
+            {/* Direction Filter Select */}
             <select
               value={direction}
               onChange={(e) => { setDirection(e.target.value); setPage(1); }}
@@ -260,6 +254,7 @@ export const ReportsPage = () => {
               <option value="outbound">📤 Saída</option>
             </select>
 
+            {/* Status Filter Select */}
             <select
               value={status}
               onChange={(e) => { setStatus(e.target.value); setPage(1); }}
@@ -269,6 +264,11 @@ export const ReportsPage = () => {
               <option value="connected">✅ Atendidas</option>
               <option value="ringing">🔔 Tocando</option>
             </select>
+
+            {/* Refresh Button */}
+            <Button variant="outline" size="icon" onClick={fetchData} title="Atualizar dados" className="h-9 w-9">
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
           </div>
         </div>
 
