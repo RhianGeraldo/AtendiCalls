@@ -30,7 +30,11 @@ func newTestManager(t *testing.T) *SessionManager {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newSessionManager(ctx, container, NewBroker(), store, waLog.Noop, slog.Default(), 0)
+	settings, err := newSettingsStore(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newSessionManager(ctx, container, NewBroker(), store, waLog.Noop, slog.Default(), 0, settings)
 }
 
 func (m *SessionManager) addUnconnected(t *testing.T, name string) *Session {
