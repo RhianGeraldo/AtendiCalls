@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -26,6 +27,7 @@ type StereoRecorder struct {
 	filePath      string
 	clientPath    string
 	attendantPath string
+	startTime     time.Time
 	closed        bool
 
 	clientSamples    []int16
@@ -45,8 +47,9 @@ func NewStereoRecorder(outputDir, callID string) (*StereoRecorder, error) {
 		filePath:         basePath + ".wav",
 		clientPath:       basePath + "_client.wav",
 		attendantPath:    basePath + "_attendant.wav",
-		clientSamples:    make([]int16, 0, 16000*30),
-		attendantSamples: make([]int16, 0, 16000*30),
+		startTime:        time.Now(),
+		clientSamples:    make([]int16, 0, SampleRate*30),
+		attendantSamples: make([]int16, 0, SampleRate*30),
 	}, nil
 }
 
@@ -55,25 +58,47 @@ func (r *StereoRecorder) FilePath() string {
 	return r.filePath
 }
 
-// WriteClientPCM stores channel 0 (Left / Client) PCM samples.
+// WriteClientPCM stores channel 0 (Left / Client) PCM samples aligned to wall-clock time.
 func (r *StereoRecorder) WriteClientPCM(pcm []float32) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed || len(pcm) == 0 {
 		return
 	}
+
+	elapsed := time.Since(r.startTime).Seconds()
+	targetPos := int(elapsed * float64(SampleRate))
+
+	if len(r.clientSamples) < targetPos {
+		gap := targetPos - len(r.clientSamples)
+		if gap > 0 && gap < 9600000 {
+			r.clientSamples = append(r.clientSamples, make([]int16, gap)...)
+		}
+	}
+
 	for _, sample := range pcm {
 		r.clientSamples = append(r.clientSamples, int16Clamp(sample))
 	}
 }
 
-// WriteAttendantPCM stores channel 1 (Right / Attendant) PCM samples.
+// WriteAttendantPCM stores channel 1 (Right / Attendant) PCM samples aligned to wall-clock time.
 func (r *StereoRecorder) WriteAttendantPCM(pcm []float32) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed || len(pcm) == 0 {
 		return
 	}
+
+	elapsed := time.Since(r.startTime).Seconds()
+	targetPos := int(elapsed * float64(SampleRate))
+
+	if len(r.attendantSamples) < targetPos {
+		gap := targetPos - len(r.attendantSamples)
+		if gap > 0 && gap < 9600000 {
+			r.attendantSamples = append(r.attendantSamples, make([]int16, gap)...)
+		}
+	}
+
 	for _, sample := range pcm {
 		r.attendantSamples = append(r.attendantSamples, int16Clamp(sample))
 	}
@@ -89,12 +114,28 @@ func (r *StereoRecorder) Close() error {
 	}
 	r.closed = true
 
-	// 1. Write Client Mono WAV (Channel 0 / Left)
+	totalDuration := time.Since(r.startTime).Seconds()
+	totalSamples := int(totalDuration * float64(SampleRate))
+
+	if len(r.clientSamples) < totalSamples {
+		gap := totalSamples - len(r.clientSamples)
+		if gap > 0 && gap < 9600000 {
+			r.clientSamples = append(r.clientSamples, make([]int16, gap)...)
+		}
+	}
+	if len(r.attendantSamples) < totalSamples {
+		gap := totalSamples - len(r.attendantSamples)
+		if gap > 0 && gap < 9600000 {
+			r.attendantSamples = append(r.attendantSamples, make([]int16, gap)...)
+		}
+	}
+
+	// 1. Write Client Mono WAV (Channel 0 / Left / Client)
 	if err := r.writeMonoWAV(r.clientPath, r.clientSamples); err != nil {
 		return fmt.Errorf("failed to write client mono wav: %w", err)
 	}
 
-	// 2. Write Attendant Mono WAV (Channel 1 / Right)
+	// 2. Write Attendant Mono WAV (Channel 1 / Right / Attendant)
 	if err := r.writeMonoWAV(r.attendantPath, r.attendantSamples); err != nil {
 		return fmt.Errorf("failed to write attendant mono wav: %w", err)
 	}
