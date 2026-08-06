@@ -432,6 +432,8 @@ func mapStatus(state core.CallState) CallStatus {
 	switch state {
 	case core.CallStateActive:
 		return StatusConnected
+	case core.CallStateConnecting:
+		return StatusConnecting
 	case core.CallStateEnded:
 		return StatusEnded
 	case core.CallStateInitiating:

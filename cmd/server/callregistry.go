@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 
 	"atendicalls/internal/voip/call"
@@ -23,24 +24,27 @@ func newCallRegistry() *callRegistry {
 func (r *callRegistry) add(callID string, ac *activeCall) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls[callID] = ac
+	key := strings.ToUpper(strings.TrimSpace(callID))
+	r.calls[key] = ac
 }
 
 func (r *callRegistry) get(callID string) (*activeCall, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ac, ok := r.calls[callID]
+	key := strings.ToUpper(strings.TrimSpace(callID))
+	ac, ok := r.calls[key]
 	return ac, ok
 }
 
 func (r *callRegistry) remove(callID string) (*activeCall, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ac, ok := r.calls[callID]
+	key := strings.ToUpper(strings.TrimSpace(callID))
+	ac, ok := r.calls[key]
 	if !ok {
 		return nil, false
 	}
-	delete(r.calls, callID)
+	delete(r.calls, key)
 	return ac, true
 }
 
@@ -53,7 +57,8 @@ func (r *callRegistry) count() int {
 func (r *callRegistry) setBridge(callID string, b *Bridge) (*Bridge, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ac, ok := r.calls[callID]
+	key := strings.ToUpper(strings.TrimSpace(callID))
+	ac, ok := r.calls[key]
 	if !ok {
 		return nil, false
 	}

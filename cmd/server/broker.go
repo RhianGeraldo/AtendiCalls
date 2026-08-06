@@ -11,10 +11,11 @@ import (
 type CallStatus string
 
 const (
-	StatusStarting  CallStatus = "starting"
-	StatusRinging   CallStatus = "ringing"
-	StatusConnected CallStatus = "connected"
-	StatusEnded     CallStatus = "ended"
+	StatusStarting   CallStatus = "starting"
+	StatusRinging    CallStatus = "ringing"
+	StatusConnecting CallStatus = "connecting"
+	StatusConnected  CallStatus = "connected"
+	StatusEnded      CallStatus = "ended"
 )
 
 type CallRecord struct {
