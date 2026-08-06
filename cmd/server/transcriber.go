@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -243,15 +244,26 @@ func (t *Transcriber) callWhisperSegments(ctx context.Context, wavPath, speaker,
 func sortUtterances(utts []TranscriptUtterance) {
 	for i := 0; i < len(utts); i++ {
 		for j := i + 1; j < len(utts); j++ {
-			diff := utts[j].Start - utts[i].Start
 			shouldSwap := false
-			if diff < -0.5 {
+			diffStart := utts[j].Start - utts[i].Start
+
+			if diffStart < -0.2 {
+				// Element j started noticeably earlier than element i
 				shouldSwap = true
-			} else if diff <= 0.5 {
-				if utts[j].Speaker == "cliente" && utts[i].Speaker == "atendente" {
+			} else if math.Abs(diffStart) <= 0.2 {
+				// Timestamps are effectively simultaneous (within 200ms)
+				// Sort by End time ascending (whichever utterance finishes first comes first)
+				diffEnd := utts[j].End - utts[i].End
+				if diffEnd < -0.2 {
 					shouldSwap = true
+				} else if math.Abs(diffEnd) <= 0.2 {
+					// If both Start and End are identical, put "cliente" before "atendente"
+					if utts[j].Speaker == "cliente" && utts[i].Speaker == "atendente" {
+						shouldSwap = true
+					}
 				}
 			}
+
 			if shouldSwap {
 				utts[i], utts[j] = utts[j], utts[i]
 			}
