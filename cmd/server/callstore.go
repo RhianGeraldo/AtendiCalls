@@ -107,6 +107,10 @@ func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_name TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_phone TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_picture_url TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN recording_path TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_json TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_summary TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcription_status TEXT DEFAULT ''`)
 
 	return &callStore{db: db}, nil
 }
@@ -214,7 +218,8 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	offset := (page - 1) * limit
 
 	query := fmt.Sprintf(`
-		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
+		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
+		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
 		FROM call_records
 		WHERE %s
 		ORDER BY started_at DESC
@@ -238,6 +243,7 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 		err := rows.Scan(
 			&r.CallID, &r.SessionID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
 			&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
+			&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
 		)
 		if err != nil {
 			return nil, 0, err
@@ -259,6 +265,58 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	}
 
 	return records, total, nil
+}
+
+func (cs *callStore) SaveRecordingPath(ctx context.Context, callID, path string) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	query := `UPDATE call_records SET recording_path = ?, transcription_status = 'pending' WHERE id = ?`
+	_, err := cs.db.ExecContext(ctx, query, path, callID)
+	return err
+}
+
+func (cs *callStore) SaveTranscript(ctx context.Context, callID, transcriptJSON, summary, status string) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	query := `UPDATE call_records SET transcript_json = ?, transcript_summary = ?, transcription_status = ? WHERE id = ?`
+	_, err := cs.db.ExecContext(ctx, query, transcriptJSON, summary, status, callID)
+	return err
+}
+
+func (cs *callStore) GetCallRecord(ctx context.Context, callID string) (*CallRecord, error) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	query := `
+		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
+		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
+		FROM call_records WHERE id = ?
+	`
+	var r CallRecord
+	var ownerStr string
+	var statusStr string
+	var connAt, endAt sql.NullInt64
+
+	err := cs.db.QueryRowContext(ctx, query, callID).Scan(
+		&r.CallID, &r.SessionID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
+		&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
+		&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if ownerStr != "" {
+		r.Owner = &ownerStr
+	}
+	r.Status = CallStatus(statusStr)
+	if connAt.Valid {
+		v := connAt.Int64
+		r.ConnectedAt = &v
+	}
+	if endAt.Valid {
+		v := endAt.Int64
+		r.EndedAt = &v
+	}
+	return &r, nil
 }
 
 func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*CallAnalyticsResponse, error) {

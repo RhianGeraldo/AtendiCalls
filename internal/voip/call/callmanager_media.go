@@ -26,6 +26,12 @@ func (m *CallManager) FeedCapturedPCM(data []float32) {
 	if m.codec == nil || m.rtpSession == nil || m.srtpSession == nil || !m.relay.HasConnection() {
 		return
 	}
+	if m.recorder == nil && m.currentCall != nil && m.recordDir != "" {
+		m.startRecorderLocked()
+	}
+	if m.recorder != nil {
+		m.recorder.WriteAttendantPCM(data)
+	}
 	m.lastCaptureAt = time.Now()
 	frameSize := m.codec.FrameSize()
 	if m.encodeBuf == nil {
@@ -159,4 +165,13 @@ func (m *CallManager) onRelayData(data []byte) {
 	if m.OnPeerAudio != nil {
 		m.OnPeerAudio(pcm)
 	}
+
+	m.mu.Lock()
+	if m.recorder == nil && m.currentCall != nil && m.recordDir != "" {
+		m.startRecorderLocked()
+	}
+	if m.recorder != nil {
+		m.recorder.WriteClientPCM(pcm)
+	}
+	m.mu.Unlock()
 }

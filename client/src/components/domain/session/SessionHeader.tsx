@@ -75,6 +75,8 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
     }
   };
 
+  const cleanStatus = session.statusText?.replace(/^"|"$/g, "").trim();
+
   return (
     <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 select-none">
       <div className="flex min-w-0 items-center gap-3">
@@ -113,7 +115,7 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
             <p className="text-xs text-muted-foreground truncate">
               {session.pushName ? <span className="font-medium text-foreground">{session.pushName} • </span> : ""}
               {session.phone ? formatPhoneBR(session.phone) : ""}
-              {session.statusText ? <span className="italic"> — "{session.statusText}"</span> : ""}
+              {cleanStatus ? <span className="italic"> — "{cleanStatus}"</span> : ""}
             </p>
           )}
         </div>

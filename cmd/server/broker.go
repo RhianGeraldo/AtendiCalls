@@ -33,6 +33,11 @@ type CallRecord struct {
 	Status            CallStatus `json:"status"`
 	EndedAt           *int64     `json:"endedAt,omitempty"`
 	EndReason         string     `json:"endReason,omitempty"`
+
+	RecordingPath       string `json:"recordingPath,omitempty"`
+	TranscriptJSON      string `json:"transcriptJson,omitempty"`
+	TranscriptSummary   string `json:"transcriptSummary,omitempty"`
+	TranscriptionStatus string `json:"transcriptionStatus,omitempty"`
 }
 
 type AuthSnapshot struct {

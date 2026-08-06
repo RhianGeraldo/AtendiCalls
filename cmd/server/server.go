@@ -11,15 +11,17 @@ import (
 )
 
 type server struct {
-	broker    *Broker
-	sessions  *SessionManager
-	users     *userStore
-	calls     *callStore
-	contacts  *contactStore
-	campaigns *campaignStore
-	playbooks *playbookStore
-	log       *slog.Logger
-	staticDir string
+	broker      *Broker
+	sessions    *SessionManager
+	users       *userStore
+	calls       *callStore
+	contacts    *contactStore
+	campaigns   *campaignStore
+	playbooks   *playbookStore
+	settings    *settingsStore
+	transcriber *Transcriber
+	log         *slog.Logger
+	staticDir   string
 }
 
 func openDB(dbPath string) (*sql.DB, error) {
@@ -66,6 +68,11 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	settingsStore, err := newSettingsStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "INFO", true)
@@ -73,7 +80,7 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 
 	broker := NewBroker()
 	broker.callStore = callStore
-	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls)
+	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls, settingsStore)
 	broker.SnapshotFn = mgr.snapshotEvents
 
 	userStore, err := newUserStore(ctx, db)
@@ -81,15 +88,19 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	transcriber := NewTranscriber(settingsStore, log)
+
 	return &server{
-		broker:    broker,
-		sessions:  mgr,
-		users:     userStore,
-		calls:     callStore,
-		contacts:  contactStore,
-		campaigns: campaignStore,
-		playbooks: playbookStore,
-		log:       log,
-		staticDir: staticDir,
+		broker:      broker,
+		sessions:    mgr,
+		users:       userStore,
+		calls:       callStore,
+		contacts:    contactStore,
+		campaigns:   campaignStore,
+		playbooks:   playbookStore,
+		settings:    settingsStore,
+		transcriber: transcriber,
+		log:         log,
+		staticDir:   staticDir,
 	}, nil
 }

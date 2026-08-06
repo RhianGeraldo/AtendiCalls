@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, 
   Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle,
-  User as UserIcon, FileText, Users, Smartphone, Calendar, TrendingUp
+  User as UserIcon, FileText, Users, Smartphone, Calendar, TrendingUp, Bot
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useSessions } from "@/stores/sessions";
 import { getCallHistoryApi, getCallAnalyticsApi } from "@/services/reports";
+import { CallTranscriptModal } from "@/components/domain/call/CallTranscriptModal";
 import type { CallHistoryItem, CallAnalyticsResponse } from "@/types/call";
 
 type ReportTab = "history" | "agents" | "sessions" | "daily";
@@ -20,6 +21,7 @@ export const ReportsPage = () => {
   const [history, setHistory] = useState<CallHistoryItem[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
   const [analytics, setAnalytics] = useState<CallAnalyticsResponse | null>(null);
+  const [selectedCallForTranscript, setSelectedCallForTranscript] = useState<CallHistoryItem | null>(null);
 
   // Active Report Tab
   const [reportTab, setReportTab] = useState<ReportTab>("history");
@@ -337,19 +339,20 @@ export const ReportsPage = () => {
                     <th className="py-3 px-4">Horário</th>
                     <th className="py-3 px-4">Duração</th>
                     <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Gravação / IA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                      <td colSpan={8} className="py-12 text-center text-muted-foreground">
                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
                         Carregando histórico...
                       </td>
                     </tr>
                   ) : history.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                      <td colSpan={8} className="py-12 text-center text-muted-foreground">
                         <PhoneCall className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         Nenhuma chamada encontrada.
                       </td>
@@ -473,6 +476,17 @@ export const ReportsPage = () => {
                                 <XCircle className="w-3.5 h-3.5" /> Perdida
                               </Badge>
                             )}
+                          </td>
+
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedCallForTranscript(call)}
+                              className="h-8 gap-1.5 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            >
+                              <Bot className="w-3.5 h-3.5" /> Áudio & IA
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -669,6 +683,13 @@ export const ReportsPage = () => {
             </table>
           </div>
         )}
+
+        {/* Modal de Transcrição e Player de Áudio por IA */}
+        <CallTranscriptModal
+          call={selectedCallForTranscript}
+          open={!!selectedCallForTranscript}
+          onOpenChange={(open) => !open && setSelectedCallForTranscript(null)}
+        />
       </div>
     </div>
   );

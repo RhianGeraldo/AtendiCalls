@@ -53,6 +53,12 @@ func newSession(mgr *SessionManager, id, name string, client *whatsmeow.Client) 
 
 func (s *Session) createCall(callID string) *call.CallManager {
 	cm := call.NewCallManager(wa.NewSocket(s.client), s.log)
+	cm.SetRecordDir("recordings")
+	cm.OnRecordDone = func(cID string, path string) {
+		ctx := context.Background()
+		_ = s.mgr.broker.callStore.SaveRecordingPath(ctx, cID, path)
+		go s.mgr.processCallTranscription(ctx, cID, path)
+	}
 	s.wireCall(cm, callID)
 	s.reg.add(callID, &activeCall{cm: cm})
 	return cm
@@ -340,7 +346,7 @@ func (s *Session) fetchProfileDetails(ctx context.Context) {
 	statusText := ""
 	if info, err := s.client.GetUserInfo(ctx, []types.JID{ownJID}); err == nil && info != nil {
 		if uInfo, ok := info[ownJID]; ok {
-			statusText = uInfo.Status
+			statusText = strings.Trim(strings.TrimSpace(uInfo.Status), `"`)
 		}
 	}
 	s.mu.Lock()

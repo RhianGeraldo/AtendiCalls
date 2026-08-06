@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -13,29 +14,31 @@ import (
 )
 
 type SessionManager struct {
-	appCtx    context.Context
-	container *sqlstore.Container
-	broker    *Broker
-	store     *sessionStore
-	waLogger  waLog.Logger
-	log       *slog.Logger
-	maxCalls  int
+	appCtx      context.Context
+	container   *sqlstore.Container
+	broker      *Broker
+	store       *sessionStore
+	waLogger    waLog.Logger
+	log         *slog.Logger
+	maxCalls    int
+	transcriber *Transcriber
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	order    []string
 }
 
-func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int) *SessionManager {
+func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int, settings *settingsStore) *SessionManager {
 	return &SessionManager{
-		appCtx:    ctx,
-		container: container,
-		broker:    broker,
-		store:     store,
-		waLogger:  waLogger,
-		log:       log,
-		maxCalls:  maxCalls,
-		sessions:  map[string]*Session{},
+		appCtx:      ctx,
+		container:   container,
+		broker:      broker,
+		store:       store,
+		waLogger:    waLogger,
+		log:         log,
+		maxCalls:    maxCalls,
+		transcriber: NewTranscriber(settings, log),
+		sessions:    map[string]*Session{},
 	}
 }
 
@@ -206,6 +209,23 @@ func (m *SessionManager) Pair(id string) error {
 	m.broker.emitSessionList(m.infos())
 	m.log.Info("session re-pairing", "session", id)
 	return nil
+}
+
+func (m *SessionManager) processCallTranscription(ctx context.Context, callID, wavPath string) {
+	if m.transcriber == nil || m.broker == nil || m.broker.callStore == nil {
+		return
+	}
+	m.log.Info("starting AI audio transcription", "call_id", callID, "wav", wavPath)
+	res, err := m.transcriber.TranscribeAudio(ctx, wavPath)
+	if err != nil {
+		m.log.Error("failed to transcribe audio", "err", err, "call_id", callID)
+		_ = m.broker.callStore.SaveTranscript(ctx, callID, "", "", "failed")
+		return
+	}
+
+	utterancesJSON, _ := json.Marshal(res.Utterances)
+	_ = m.broker.callStore.SaveTranscript(ctx, callID, string(utterancesJSON), res.Summary, "completed")
+	m.log.Info("AI audio transcription completed", "call_id", callID, "utterances", len(res.Utterances))
 }
 
 func (m *SessionManager) disconnectAll() {

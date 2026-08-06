@@ -23,12 +23,15 @@ var _ RelayTransport = (*transport.SctpRelayManager)(nil)
 func (m *CallManager) onRelayConnected() {
 	m.mu.Lock()
 	call := m.currentCall
-	if call != nil && call.StateData.State == core.CallStateConnecting {
-		if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
-			m.emitState()
-			m.startSilenceKeepaliveLocked()
-			m.log.Info("relay connected → active", "call_id", call.CallID)
+	if call != nil {
+		if call.StateData.State == core.CallStateConnecting {
+			if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
+				m.emitState()
+			}
 		}
+		m.startSilenceKeepaliveLocked()
+		m.startRecorderLocked()
+		m.log.Info("relay connected → active", "call_id", call.CallID)
 	}
 	m.mu.Unlock()
 }
@@ -83,6 +86,7 @@ func (m *CallManager) cleanupMedia() {
 		close(m.keepaliveStop)
 		m.keepaliveStop = nil
 	}
+	m.stopRecorderLocked()
 	m.rtpSession = nil
 	m.srtpSession = nil
 	m.firstPacketSent = false

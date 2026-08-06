@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,6 +38,11 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/calls/analytics", s.handleCallAnalytics)
 
+	// Call audio recording & transcription routes
+	mux.HandleFunc("GET /api/calls/{id}/audio", s.handleCallAudio)
+	mux.HandleFunc("GET /api/calls/{id}/transcript", s.handleCallTranscript)
+	mux.HandleFunc("POST /api/calls/{id}/transcribe", s.handleCallTranscribe)
+
 	// User management routes
 	mux.HandleFunc("GET /api/users", s.handleUserList)
 	mux.HandleFunc("POST /api/users", s.handleUserCreate)
@@ -61,7 +67,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/playbooks", s.handlePlaybookList)
 	mux.HandleFunc("POST /api/playbooks", s.handlePlaybookCreate)
 	mux.HandleFunc("PUT /api/playbooks/{id}", s.handlePlaybookUpdate)
-	mux.HandleFunc("DELETE /api/playbooks/{id}", s.handlePlaybookDelete)
+	// System Settings routes (AI Transcriber API Keys)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("POST /api/settings", s.handleUpdateSettings)
 
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
@@ -917,4 +925,129 @@ func (s *server) handlePlaybookDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Playbook excluído."})
+}
+
+func (s *server) handleCallAudio(w http.ResponseWriter, r *http.Request) {
+	callID := r.PathValue("id")
+	if callID == "" {
+		http.Error(w, "missing call id", http.StatusBadRequest)
+		return
+	}
+	rec, _ := s.calls.GetCallRecord(r.Context(), callID)
+	recPath := ""
+	if rec != nil {
+		recPath = rec.RecordingPath
+	}
+	if recPath == "" || func() bool { _, err := os.Stat(recPath); return err != nil }() {
+		fallback := filepath.Join("recordings", fmt.Sprintf("%s.wav", callID))
+		if _, err := os.Stat(fallback); err == nil {
+			recPath = fallback
+			_ = s.calls.SaveRecordingPath(r.Context(), callID, fallback)
+		}
+	}
+	if recPath == "" {
+		http.Error(w, "recording not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "audio/wav")
+	http.ServeFile(w, r, recPath)
+}
+
+func (s *server) handleCallTranscript(w http.ResponseWriter, r *http.Request) {
+	callID := r.PathValue("id")
+	if callID == "" {
+		http.Error(w, "missing call id", http.StatusBadRequest)
+		return
+	}
+	rec, err := s.calls.GetCallRecord(r.Context(), callID)
+	if err != nil || rec == nil {
+		http.Error(w, "call not found", http.StatusNotFound)
+		return
+	}
+	recPath := rec.RecordingPath
+	if recPath == "" {
+		fallback := filepath.Join("recordings", fmt.Sprintf("%s.wav", callID))
+		if _, err := os.Stat(fallback); err == nil {
+			recPath = fallback
+			_ = s.calls.SaveRecordingPath(r.Context(), callID, fallback)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"callId":              callID,
+		"recordingPath":       recPath,
+		"transcriptJson":      rec.TranscriptJSON,
+		"transcriptSummary":   rec.TranscriptSummary,
+		"transcriptionStatus": rec.TranscriptionStatus,
+	})
+}
+
+func (s *server) handleCallTranscribe(w http.ResponseWriter, r *http.Request) {
+	callID := r.PathValue("id")
+	if callID == "" {
+		http.Error(w, "missing call id", http.StatusBadRequest)
+		return
+	}
+	rec, err := s.calls.GetCallRecord(r.Context(), callID)
+	recPath := ""
+	if rec != nil {
+		recPath = rec.RecordingPath
+	}
+	if recPath == "" {
+		fallback := filepath.Join("recordings", fmt.Sprintf("%s.wav", callID))
+		if _, err := os.Stat(fallback); err == nil {
+			recPath = fallback
+			_ = s.calls.SaveRecordingPath(r.Context(), callID, fallback)
+		}
+	}
+	if recPath == "" {
+		http.Error(w, "call or recording not found", http.StatusNotFound)
+		return
+	}
+	res, err := s.transcriber.TranscribeAudio(r.Context(), recPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	utterancesJSON, _ := json.Marshal(res.Utterances)
+	_ = s.calls.SaveTranscript(r.Context(), callID, string(utterancesJSON), res.Summary, "completed")
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"callId":            callID,
+		"transcriptJson":    string(utterancesJSON),
+		"transcriptSummary": res.Summary,
+		"status":            "completed",
+	})
+}
+
+func (s *server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.settings.GetAll(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"groqApiKey":   settings["groq_api_key"],
+		"openaiApiKey": settings["openai_api_key"],
+		"whisperModel": settings["whisper_model"],
+	})
+}
+
+func (s *server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		GroqAPIKey   string `json:"groqApiKey"`
+		OpenAIAPIKey string `json:"openaiApiKey"`
+		WhisperModel string `json:"whisperModel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "JSON inválido."})
+		return
+	}
+
+	_ = s.settings.Set(r.Context(), "groq_api_key", body.GroqAPIKey)
+	_ = s.settings.Set(r.Context(), "openai_api_key", body.OpenAIAPIKey)
+	if body.WhisperModel != "" {
+		_ = s.settings.Set(r.Context(), "whisper_model", body.WhisperModel)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Configurações de IA salvas com sucesso!"})
 }

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Smartphone, Plus, Pencil, Trash2, Power, QrCode, Loader2, CheckCircle2, AlertCircle, Radio } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Smartphone, Plus, Pencil, Trash2, Power, QrCode, Loader2, CheckCircle2, AlertCircle, Radio, Bot, Save, Key } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { useSessions, setActiveSession } from "@/stores/sessions";
 import { createSession, deleteSession, logoutSession, pairSession, renameSession } from "@/services/sessions";
+import { getAISettings, saveAISettings } from "@/services/settings";
 import { useAuth } from "@/stores/auth";
 import { formatPhoneBR } from "@/utils/format";
 import type { SessionInfo } from "@/types/session";
@@ -25,6 +26,32 @@ export const AccountsPage = () => {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
+
+  // AI Settings State
+  const [groqApiKey, setGroqApiKey] = useState("");
+  const [whisperModel, setWhisperModel] = useState("whisper-large-v3-turbo");
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  useEffect(() => {
+    getAISettings()
+      .then((res) => {
+        if (res.groqApiKey) setGroqApiKey(res.groqApiKey);
+        if (res.whisperModel) setWhisperModel(res.whisperModel);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveAISettings = async () => {
+    setSavingSettings(true);
+    try {
+      await saveAISettings({ groqApiKey, whisperModel });
+      toast.success("Configurações da IA de Transcrição salvas com sucesso!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao salvar configurações.");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   // New Session Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -150,6 +177,50 @@ export const AccountsPage = () => {
         </div>
       </div>
 
+      {/* Card: Configuração da IA de Transcrição (Groq / Whisper) */}
+      <div className="rounded-2xl border border-emerald-500/30 bg-card p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Configuração da IA de Transcrição (Groq / Whisper)</h3>
+              <p className="text-xs text-muted-foreground">Insira sua chave de API para habilitar a transcrição automática das ligações</p>
+            </div>
+          </div>
+          <Badge variant="outline" className="w-fit text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+            Groq Whisper API
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+          <div className="sm:col-span-8 space-y-1.5">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Key className="h-3.5 w-3.5 text-emerald-500" /> Chave de API do Groq (Groq API Key)
+            </label>
+            <Input
+              type="password"
+              value={groqApiKey}
+              onChange={(e) => setGroqApiKey(e.target.value)}
+              placeholder="gsk_..."
+              className="text-xs font-mono"
+            />
+          </div>
+
+          <div className="sm:col-span-4 flex items-center gap-2">
+            <Button
+              onClick={handleSaveAISettings}
+              disabled={savingSettings}
+              className="w-full h-9 text-xs gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            >
+              {savingSettings ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Salvar API Key
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Header Bar with Create Action */}
       <div className="flex justify-between items-center border-b border-border/40 pb-3">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -168,6 +239,7 @@ export const AccountsPage = () => {
         {sessions.map((s) => {
           const isSelected = s.id === activeId;
           const isBusy = busySessionId === s.id;
+          const cleanStatus = s.statusText?.replace(/^"|"$/g, "").trim();
 
           return (
             <div
@@ -220,7 +292,7 @@ export const AccountsPage = () => {
                 {s.phone && (
                   <div className="rounded-xl bg-muted/40 p-2.5 text-xs text-muted-foreground space-y-0.5">
                     <p className="font-mono font-medium text-foreground">{formatPhoneBR(s.phone)}</p>
-                    {s.statusText && <p className="italic text-[11px] truncate">"{s.statusText}"</p>}
+                    {cleanStatus ? <p className="italic text-[11px] truncate">"{cleanStatus}"</p> : null}
                   </div>
                 )}
               </div>

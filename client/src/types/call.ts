@@ -1,5 +1,12 @@
 export type CallStatus = "starting" | "ringing" | "connected" | "ended";
 
+export type TranscriptUtterance = {
+  speaker: "atendente" | "cliente";
+  start: number;
+  end: number;
+  text: string;
+};
+
 export type CallSummary = {
   sessionId: string;
   sessionName?: string;
@@ -16,6 +23,10 @@ export type CallSummary = {
   status: CallStatus;
   endedAt?: number;
   endReason?: string;
+  recordingPath?: string;
+  transcriptJson?: string;
+  transcriptSummary?: string;
+  transcriptionStatus?: string;
 };
 
 export type IncomingPayload = { sessionId: string; callId: string; peer: string; name?: string; pictureUrl?: string; offeredAt: number };
@@ -36,6 +47,10 @@ export type CallHistoryItem = {
   endedAt?: number;
   status: CallStatus;
   endReason?: string;
+  recordingPath?: string;
+  transcriptJson?: string;
+  transcriptSummary?: string;
+  transcriptionStatus?: string;
 };
 
 export type CallAnalyticsSummary = {

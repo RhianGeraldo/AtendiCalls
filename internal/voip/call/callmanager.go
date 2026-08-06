@@ -3,6 +3,7 @@ package call
 import (
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/media"
+	"atendicalls/internal/voip/recorder"
 	"atendicalls/internal/voip/signaling"
 	"atendicalls/internal/voip/transport"
 	"atendicalls/internal/voip/wanode"
@@ -42,10 +43,14 @@ type CallManager struct {
 	lastCaptureAt time.Time
 	keepaliveStop chan struct{}
 
+	recordDir string
+	recorder  *recorder.StereoRecorder
+
 	OnStateChange func(*CallInfo)
 	OnIncoming    func(*CallInfo)
 	OnEnded       func(*CallInfo)
 	OnPeerAudio   func([]float32)
+	OnRecordDone  func(callID string, path string)
 }
 
 func NewCallManager(sock core.VoipSocket, log *slog.Logger) *CallManager {
@@ -234,6 +239,48 @@ func (m *CallManager) EndCall(ctx context.Context, reason core.EndCallReason) er
 	}
 	m.cleanupMedia()
 	return nil
+}
+
+func (m *CallManager) SetRecordDir(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recordDir = dir
+}
+
+func (m *CallManager) startRecorderLocked() {
+	if m.recordDir == "" || m.currentCall == nil || m.recorder != nil {
+		return
+	}
+	rec, err := recorder.NewStereoRecorder(m.recordDir, m.currentCall.CallID)
+	if err != nil {
+		m.log.Error("failed to start stereo recorder", "err", err, "call_id", m.currentCall.CallID)
+		return
+	}
+	m.recorder = rec
+	m.log.Info("stereo audio recording started", "call_id", m.currentCall.CallID, "path", rec.FilePath())
+}
+
+func (m *CallManager) stopRecorderLocked() {
+	if m.recorder == nil {
+		return
+	}
+	rec := m.recorder
+	m.recorder = nil
+	callID := ""
+	if m.currentCall != nil {
+		callID = m.currentCall.CallID
+	}
+	go func() {
+		path := rec.FilePath()
+		if err := rec.Close(); err != nil {
+			m.log.Error("failed to close recorder", "err", err)
+			return
+		}
+		m.log.Info("stereo audio recording saved", "call_id", callID, "path", path)
+		if m.OnRecordDone != nil && callID != "" {
+			m.OnRecordDone(callID, path)
+		}
+	}()
 }
 
 func (m *CallManager) ownCredJid() string {

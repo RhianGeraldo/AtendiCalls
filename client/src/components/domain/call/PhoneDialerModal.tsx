@@ -14,9 +14,10 @@ import {
   GripHorizontal,
   Disc,
   Square,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { PlaybookAsidePanel } from "@/components/domain/playbook/PlaybookAsidePanel";
 import { useDialerStore } from "@/stores/dialer";
 import { useSessions } from "@/stores/sessions";
 import { useDevices } from "@/stores/devices";
@@ -25,10 +26,10 @@ import { useStartCall } from "@/hooks/useStartCall";
 import { useEndCall } from "@/hooks/useEndCall";
 import { useAcceptCall } from "@/hooks/useAcceptCall";
 import { useRejectCall } from "@/hooks/useRejectCall";
-import type { CallStatus } from "@/types/call";
 import { attachMeter } from "@/lib/audio-meter";
 import { formatCallDuration } from "@/utils/format";
 import { toast } from "sonner";
+import { useCampaignRunner } from "@/stores/campaignRunner";
 
 const KEYPAD = [
   { key: "1", sub: "" },
@@ -44,20 +45,6 @@ const KEYPAD = [
   { key: "0", sub: "+" },
   { key: "#", sub: "" },
 ];
-
-const statusLabel: Record<CallStatus, string> = {
-  starting: "Iniciando chamada...",
-  ringing: "Chamando...",
-  connected: "Em Chamada",
-  ended: "Finalizada",
-};
-
-const statusVariant: Record<CallStatus, "success" | "secondary" | "muted"> = {
-  connected: "success",
-  ringing: "secondary",
-  starting: "secondary",
-  ended: "muted",
-};
 
 function formatPhoneBR(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -77,7 +64,6 @@ function formatPhoneBR(raw: string): string {
   return raw;
 }
 
-import { useCampaignRunner } from "@/stores/campaignRunner";
 
 export const PhoneDialerModal = () => {
   const { isOpen, closeDialer, selectedSid, setSelectedSid, initialPhone } = useDialerStore();
@@ -93,6 +79,7 @@ export const PhoneDialerModal = () => {
   const [phone, setPhone] = useState(initialPhone);
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [showPlaybook, setShowPlaybook] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
@@ -297,22 +284,7 @@ export const PhoneDialerModal = () => {
       };
 
       recorder.onstop = () => {
-        if (recordedChunksRef.current.length === 0) return;
-        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = url;
-        const peerName = activeCall?.name || activeCall?.peer || "chamada";
-        const cleanName = peerName.replace(/[^a-zA-Z0-9]/g, "_");
-        a.download = `gravacao_${cleanName}_${Date.now()}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-        toast.success("Gravação da chamada salva!");
+        toast.success("Gravação armazenada no servidor e pronta para transcrição por IA!");
       };
 
       recorder.start(1000);
@@ -375,9 +347,12 @@ export const PhoneDialerModal = () => {
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!isDraggingRef.current) return;
-      const newX = Math.max(8, Math.min(window.innerWidth - 348, ev.clientX - dragOffsetRef.current.x));
-      const newY = Math.max(8, Math.min(window.innerHeight - 558, ev.clientY - dragOffsetRef.current.y));
-      setPos({ x: newX, y: newY });
+      const totalWidth = showPlaybook ? 692 : 340;
+      const leftBoundary = ev.clientX - dragOffsetRef.current.x;
+      const clampedLeft = Math.max(8, Math.min(window.innerWidth - totalWidth - 8, leftBoundary));
+      const phoneX = showPlaybook ? clampedLeft + 352 : clampedLeft;
+      const phoneY = Math.max(8, Math.min(window.innerHeight - 558, ev.clientY - dragOffsetRef.current.y));
+      setPos({ x: phoneX, y: phoneY });
     };
 
     const onMouseUp = () => {
@@ -416,9 +391,14 @@ export const PhoneDialerModal = () => {
 
   if (!isOpen || isCampaignOpen) return null;
 
-  const stylePosition = pos
-    ? { left: `${pos.x}px`, top: `${pos.y}px`, right: "auto", bottom: "auto" }
-    : undefined;
+  const containerStyle: React.CSSProperties = pos
+    ? {
+        left: showPlaybook ? `${pos.x - 352}px` : `${pos.x}px`,
+        top: `${pos.y}px`,
+        right: "auto",
+        bottom: "auto",
+      }
+    : {};
 
   const formattedDisplay = formatPhoneBR(phone);
   const cleanPhoneDigits = phone.replace(/\D/g, "");
@@ -426,288 +406,310 @@ export const PhoneDialerModal = () => {
   return createPortal(
     <div
       ref={containerRef}
-      style={stylePosition}
-      className={`fixed z-[100] w-[340px] h-[550px] rounded-3xl p-5 shadow-2xl border bg-background text-foreground flex flex-col justify-between select-none transition-shadow ${
-        !pos ? "bottom-6 right-6 top-auto left-auto" : ""
+      style={containerStyle}
+      className={`fixed z-[100] flex gap-3 items-start select-none ${
+        !pos ? "bottom-6 right-6" : ""
       }`}
     >
-      {/* Top Drag Bar & Header */}
-      <div
-        onMouseDown={handleMouseDown}
-        className="flex flex-col gap-1 pb-2 cursor-grab active:cursor-grabbing border-b border-muted/40"
-      >
-        {/* Drag Handle Bar */}
-        <div className="flex justify-center -mt-2 -mb-1 opacity-50 hover:opacity-100 transition-opacity">
-          <GripHorizontal className="h-4 w-7 text-muted-foreground" />
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <PhoneCall className="h-4 w-4" />
-            </div>
-
-            {/* Instance Selector Dropdown */}
-            <div className="relative flex-1 min-w-0">
-              <select
-                value={currentSid}
-                onChange={(e) => setSelectedSid(e.target.value)}
-                disabled={!!activeCall}
-                className="w-full appearance-none rounded-xl border border-input bg-muted/40 px-2.5 py-1.5 pr-7 text-xs font-medium focus:bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer truncate disabled:opacity-75"
-              >
-                {pairedSessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.jid ? s.jid.split("@")[0] : s.id.slice(0, 6)})
-                  </option>
-                ))}
-                {pairedSessions.length === 0 && (
-                  <option value="" disabled>
-                    Nenhuma conta pareada
-                  </option>
-                )}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            </div>
-          </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={closeDialer}
-            className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground shrink-0"
-            aria-label="Fechar celular virtual"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* --- VIEW B: ACTIVE CALL INTERFACE --- */}
-      {(() => {
-        const displayCall = activeCall || (isIncomingForSession ? {
-          status: "ringing_incoming",
-          peer: incoming.peer,
-          name: incoming.name || "",
-          pictureUrl: incoming.pictureUrl || "",
-          startedAt: incoming.offeredAt,
-          connectedAt: 0,
-        } : null) as any;
-
-        if (!displayCall) return null;
-        
-        return (
-        <div className="flex-1 flex flex-col items-center justify-between py-3 text-center">
-          {/* Header Tag & Recording Indicator */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground bg-muted/50 px-2.5 py-0.5 rounded-full">
-              Whatsapp Audio
-            </span>
-            {isRecording && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 animate-pulse bg-red-500/10 px-2 py-0.5 rounded-full">
-                <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> REC
-              </span>
-            )}
-          </div>
-
-          {/* Avatar & Pulse Ring */}
-          <div className="relative flex items-center justify-center my-2">
-            <div
-              className={`flex h-24 w-24 overflow-hidden items-center justify-center rounded-full border-2 bg-muted/30 shadow-md ${
-                displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming"
-                  ? "animate-pulse border-amber-500/50 bg-amber-500/10 text-amber-500"
-                  : displayCall.status === "connected"
-                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
-                  : "border-muted text-muted-foreground"
-              }`}
-            >
-              {displayCall.pictureUrl ? (
-                <img src={displayCall.pictureUrl} alt={displayCall.name || displayCall.peer} className="h-full w-full object-cover" />
-              ) : (
-                <User className="h-12 w-12" />
-              )}
-            </div>
-            {(displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming") && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
-              </span>
-            )}
-          </div>
-
-          {/* Peer Info & Status */}
-          <div className="space-y-1 w-full px-2">
-            <h3 className="text-xl font-bold tracking-tight text-foreground truncate">
-              {displayCall.name || (displayCall.peer ? formatPhoneBR(displayCall.peer.split("@")[0]) : formattedDisplay || phone)}
-            </h3>
-            {displayCall.name && (
-              <p className="text-xs text-muted-foreground font-mono">
-                {formatPhoneBR(displayCall.peer.split("@")[0])}
-              </p>
-            )}
-            <div className="flex items-center justify-center gap-2">
-              <Badge variant={displayCall.status === "ringing_incoming" ? "secondary" : statusVariant[displayCall.status as CallStatus]} className="px-3 py-0.5 text-xs font-medium">
-                {displayCall.status === "ringing_incoming" ? "Recebendo chamada..." : (statusLabel[displayCall.status as CallStatus] || displayCall.status)}
-              </Badge>
-              {displayCall.status === "connected" && (
-                <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  {formatCallDuration(displayCall.startedAt, displayCall.status, displayCall.connectedAt)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Audio Meter */}
-          {displayCall.status === "connected" && (
-            <div className="w-full px-4 space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Radio className="h-3.5 w-3.5 animate-pulse text-emerald-500" /> Áudio ao vivo
-                </span>
-                <span>{isMuted ? "Silenciado" : "Ativo"}</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-150 rounded-full"
-                  style={{
-                    width: `${Math.max(5, Math.min(100, Math.round(((Math.max(micDb, peerDb) + 60) / 60) * 100)))}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Call Controls */}
-          {displayCall.status === "ringing_incoming" ? (
-            <div className="flex items-center justify-center gap-6 mb-2 w-full pt-2">
-              <Button
-                variant="destructive"
-                size="icon"
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
-                disabled={accept.isPending || reject.isPending}
-                onClick={() => incoming && reject.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
-              >
-                <PhoneOff className="h-6 w-6" />
-              </Button>
-              <Button
-                size="icon"
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all text-white"
-                disabled={accept.isPending || reject.isPending}
-                onClick={() => incoming && accept.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
-              >
-                <Phone className="h-6 w-6" />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-5 mb-2 w-full pt-2">
-              <button
-                type="button"
-                onClick={toggleMute}
-                disabled={displayCall.status !== "connected"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
-                  isMuted
-                    ? "bg-slate-800 text-white border-slate-800 shadow-md"
-                    : "bg-muted/50 hover:bg-muted text-foreground border-muted-foreground/20"
-                } disabled:opacity-40 disabled:pointer-events-none`}
-                title={isMuted ? "Desmutar Microfone" : "Silenciar Microfone"}
-              >
-                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleRecording}
-                disabled={displayCall.status !== "connected"}
-                className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
-                  isRecording
-                    ? "bg-red-600 text-white border-red-600 shadow-md animate-pulse"
-                    : "bg-muted/50 hover:bg-muted text-red-500 border-muted-foreground/20"
-                } disabled:opacity-40 disabled:pointer-events-none`}
-                title={isRecording ? "Parar Gravação" : "Gravar Chamada"}
-              >
-                {isRecording ? <Square className="h-5 w-5 fill-white" /> : <Disc className="h-5 w-5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleHangup}
-                disabled={endCall.isPending}
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
-                title="Finalizar Chamada"
-              >
-                <PhoneOff className="h-6 w-6" />
-              </button>
-            </div>
-          )}
-
-          <audio ref={audioRef} autoPlay />
-        </div>
-        );
-      })()}
-      {!activeCall && !isIncomingForSession && (
-        /* --- VIEW A: KEYPAD DIALER INTERFACE --- */
-        <div className="flex-1 flex flex-col justify-between pt-2">
-          {/* Number Display & Input Area */}
-          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-muted/30 border border-muted/50 min-h-[58px]">
-            <input
-              type="text"
-              value={formattedDisplay}
-              onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-              placeholder="Digite..."
-              autoFocus
-              className="w-full bg-transparent text-xl font-bold tracking-wider text-foreground placeholder:text-muted-foreground/40 placeholder:font-light focus:outline-none"
-            />
-          </div>
-
-          {/* 3x4 Keypad Grid (Circular 56px buttons) */}
-          <div className="grid grid-cols-3 gap-2.5 py-2 px-1">
-            {KEYPAD.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleKeyPress(item.key)}
-                className="group flex flex-col items-center justify-center h-[56px] w-[56px] mx-auto rounded-full bg-[#f3f4f6] dark:bg-muted/40 hover:bg-[#e5e7eb] dark:hover:bg-accent active:bg-[#d1d5db] active:scale-95 transition-all border border-muted/20"
-              >
-                <span className="text-lg font-medium text-foreground group-hover:scale-105 transition-transform">
-                  {item.key}
-                </span>
-                {item.sub ? (
-                  <span className="text-[8px] font-bold tracking-widest text-muted-foreground/70 uppercase">
-                    {item.sub}
-                  </span>
-                ) : (
-                  <span className="h-2" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Bottom Actions Row: Call Button + Backspace Button */}
-          <div className="flex items-center justify-center relative py-1 min-h-[60px]">
-            {/* Centered Green Call Button */}
-            <button
-              type="button"
-              onClick={handleCall}
-              disabled={startCall.isPending || cleanPhoneDigits.length < 8 || !activeSession?.paired}
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-[#10b981] hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all"
-              aria-label="Fazer chamada"
-            >
-              <Phone className="h-6 w-6 fill-white" />
-            </button>
-
-            {/* Backspace Button positioned to the right */}
-            {phone.length > 0 && (
-              <button
-                type="button"
-                onClick={handleBackspace}
-                className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-700 active:scale-95 transition-all shadow-sm"
-                aria-label="Apagar dígito"
-              >
-                <Delete className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Playbook Aside Drawer (Left Side inside same div) */}
+      {showPlaybook && (
+        <PlaybookAsidePanel
+          onClose={() => setShowPlaybook(false)}
+          className="w-[340px] h-[550px] shrink-0"
+        />
       )}
+
+      {/* Phone Widget Container (Right Side inside same div) */}
+      <div className="w-[340px] h-[550px] rounded-3xl p-5 shadow-2xl border bg-background text-foreground flex flex-col justify-between transition-shadow relative overflow-hidden shrink-0">
+        {/* Top Drag Bar & Header */}
+        <div
+          onMouseDown={handleMouseDown}
+          className="flex flex-col gap-1 pb-2 cursor-grab active:cursor-grabbing border-b border-muted/40"
+        >
+          {/* Drag Handle Bar */}
+          <div className="flex justify-center -mt-2 -mb-1 opacity-50 hover:opacity-100 transition-opacity">
+            <GripHorizontal className="h-4 w-7 text-muted-foreground" />
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <PhoneCall className="h-4 w-4" />
+              </div>
+
+              {/* Instance Selector Dropdown */}
+              <div className="relative flex-1 min-w-0">
+                <select
+                  value={currentSid}
+                  onChange={(e) => setSelectedSid(e.target.value)}
+                  disabled={!!activeCall}
+                  className="w-full appearance-none rounded-xl border border-input bg-muted/40 px-2.5 py-1.5 pr-7 text-xs font-medium focus:bg-background focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer truncate disabled:opacity-75"
+                >
+                  {pairedSessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.jid ? s.jid.split("@")[0] : s.id.slice(0, 6)})
+                    </option>
+                  ))}
+                  {pairedSessions.length === 0 && (
+                    <option value="" disabled>
+                      Nenhuma conta pareada
+                    </option>
+                  )}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </div>
+
+            {/* Playbook Toggle Button */}
+            <Button
+              variant={showPlaybook ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setShowPlaybook(!showPlaybook)}
+              className={`h-8 w-8 rounded-full shrink-0 ${
+                showPlaybook ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              title={showPlaybook ? "Fechar Playbook" : "Abrir Playbook Roteiro"}
+            >
+              <BookOpen className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={closeDialer}
+              className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground shrink-0"
+              aria-label="Fechar celular virtual"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* --- VIEW B: ACTIVE CALL INTERFACE --- */}
+        {(() => {
+          const displayCall = activeCall || (isIncomingForSession ? {
+            status: "ringing_incoming",
+            peer: incoming.peer,
+            name: incoming.name || "",
+            pictureUrl: incoming.pictureUrl || "",
+            startedAt: incoming.offeredAt,
+            connectedAt: 0,
+          } : null) as any;
+
+          if (!displayCall) return null;
+          
+          return (
+          <div className="flex-1 flex flex-col items-center justify-between py-3 text-center">
+            {/* Header Tag & Recording Indicator */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground bg-muted/50 px-2.5 py-0.5 rounded-full">
+                Whatsapp Audio
+              </span>
+              {isRecording && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 animate-pulse bg-red-500/10 px-2 py-0.5 rounded-full">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> REC
+                </span>
+              )}
+            </div>
+
+            {/* Avatar & Pulse Ring */}
+            <div className="relative flex items-center justify-center my-2">
+              <div
+                className={`flex h-24 w-24 overflow-hidden items-center justify-center rounded-full border-2 bg-muted/30 shadow-md ${
+                  displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming"
+                    ? "animate-pulse border-amber-500/50 bg-amber-500/10 text-amber-500"
+                    : displayCall.status === "connected"
+                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
+                    : "border-muted text-muted-foreground"
+                }`}
+              >
+                {displayCall.pictureUrl ? (
+                  <img src={displayCall.pictureUrl} alt={displayCall.name || displayCall.peer} className="h-full w-full object-cover" />
+                ) : (
+                  <User className="h-12 w-12" />
+                )}
+              </div>
+              {(displayCall.status === "ringing" || displayCall.status === "starting" || displayCall.status === "ringing_incoming") && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+                </span>
+              )}
+            </div>
+
+            {/* Peer Name & Phone Number */}
+            <div className="space-y-1 w-full px-2">
+              <h3 className="text-base font-bold text-foreground truncate">
+                {displayCall.name || displayCall.peer}
+              </h3>
+              <p className="text-xs font-mono text-muted-foreground truncate">
+                {formatPhoneBR(displayCall.peer)}
+              </p>
+            </div>
+
+            {/* Status & Timer Badge */}
+            <div className="my-1">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-foreground">
+                <Radio className="h-3 w-3 text-emerald-500 animate-pulse" />
+                {displayCall.status === "connected"
+                  ? formatCallDuration(displayCall.startedAt, displayCall.status, displayCall.connectedAt)
+                  : displayCall.status === "ringing_incoming"
+                  ? "Chamada Recebida..."
+                  : "Chamando..."}
+              </span>
+            </div>
+
+            {/* Audio Signal Wave / dB Level Meter */}
+            <div className="flex items-center justify-center gap-6 w-full py-1 text-[11px] text-muted-foreground font-mono">
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] uppercase font-bold text-muted-foreground">MIC:</span>
+                <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-75"
+                    style={{ width: `${Math.min(100, Math.max(0, (micDb + 60) * 1.66))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] uppercase font-bold text-muted-foreground">AUDIO:</span>
+                <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-75"
+                    style={{ width: `${Math.min(100, Math.max(0, (peerDb + 60) * 1.66))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Control Buttons */}
+            {isIncomingForSession && displayCall.status === "ringing_incoming" ? (
+              <div className="flex items-center justify-center gap-6 mb-2 w-full pt-2">
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/30"
+                  onClick={() => incoming && reject.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
+                >
+                  <PhoneOff className="h-6 w-6" />
+                </Button>
+
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 animate-bounce"
+                  onClick={() => incoming && accept.mutate({ sid: incoming.sessionId, callId: incoming.callId })}
+                >
+                  <Phone className="h-6 w-6" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-5 mb-2 w-full pt-2">
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  disabled={displayCall.status !== "connected"}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
+                    isMuted
+                      ? "bg-slate-800 text-white border-slate-800 shadow-md"
+                      : "bg-muted/50 hover:bg-muted text-foreground border-muted-foreground/20"
+                  } disabled:opacity-40 disabled:pointer-events-none`}
+                  title={isMuted ? "Desmutar Microfone" : "Silenciar Microfone"}
+                >
+                  {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleRecording}
+                  disabled={displayCall.status !== "connected"}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
+                    isRecording
+                      ? "bg-red-600 text-white border-red-600 shadow-md animate-pulse"
+                      : "bg-muted/50 hover:bg-muted text-red-500 border-muted-foreground/20"
+                  } disabled:opacity-40 disabled:pointer-events-none`}
+                  title={isRecording ? "Parar Gravação" : "Gravar Chamada"}
+                >
+                  {isRecording ? <Square className="h-5 w-5 fill-white" /> : <Disc className="h-5 w-5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleHangup}
+                  disabled={endCall.isPending}
+                  className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ef4444] hover:bg-[#dc2626] text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all"
+                  title="Finalizar Chamada"
+                >
+                  <PhoneOff className="h-6 w-6" />
+                </button>
+              </div>
+            )}
+
+            <audio ref={audioRef} autoPlay />
+          </div>
+          );
+        })()}
+        {!activeCall && !isIncomingForSession && (
+          /* --- VIEW A: KEYPAD DIALER INTERFACE --- */
+          <div className="flex-1 flex flex-col justify-between pt-2">
+            {/* Number Display & Input Area */}
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-muted/30 border border-muted/50 min-h-[58px]">
+              <input
+                type="text"
+                value={formattedDisplay}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                placeholder="Digite..."
+                autoFocus
+                className="w-full bg-transparent text-xl font-bold tracking-wider text-foreground placeholder:text-muted-foreground/40 placeholder:font-light focus:outline-none"
+              />
+            </div>
+
+            {/* 3x4 Keypad Grid (Circular 56px buttons) */}
+            <div className="grid grid-cols-3 gap-2.5 py-2 px-1">
+              {KEYPAD.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => handleKeyPress(item.key)}
+                  className="flex flex-col items-center justify-center h-14 w-full rounded-full bg-muted/40 hover:bg-muted active:scale-95 transition-all border border-muted/20"
+                >
+                  <span className="text-xl font-semibold leading-none text-foreground">{item.key}</span>
+                  {item.sub && (
+                    <span className="text-[9px] font-bold text-muted-foreground/60 tracking-widest mt-0.5">
+                      {item.sub}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Bottom Call Action Row */}
+            <div className="relative flex items-center justify-center pt-1 pb-1">
+              <button
+                type="button"
+                onClick={handleCall}
+                disabled={!cleanPhoneDigits}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                aria-label="Fazer chamada"
+              >
+                <Phone className="h-6 w-6 fill-white" />
+              </button>
+
+              {/* Backspace Button positioned to the right */}
+              {phone.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBackspace}
+                  className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-700 active:scale-95 transition-all shadow-sm"
+                  aria-label="Apagar dígito"
+                >
+                  <Delete className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>,
     document.body
   );
