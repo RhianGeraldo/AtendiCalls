@@ -128,21 +128,21 @@ func (t *Transcriber) TranscribeAudio(ctx context.Context, wavPath string) (*Tra
 func (t *Transcriber) transcribeDualChannel(ctx context.Context, clientPath, attendantPath, apiKey, apiURL, model string) (*TranscriptResult, error) {
 	var utterances []TranscriptUtterance
 
-	attendantUtts, errA := t.callWhisperSegments(ctx, attendantPath, "atendente", apiKey, apiURL, model)
-	if errA == nil {
-		utterances = append(utterances, attendantUtts...)
-	}
-
 	clientUtts, errC := t.callWhisperSegments(ctx, clientPath, "cliente", apiKey, apiURL, model)
 	if errC == nil {
 		utterances = append(utterances, clientUtts...)
+	}
+
+	attendantUtts, errA := t.callWhisperSegments(ctx, attendantPath, "atendente", apiKey, apiURL, model)
+	if errA == nil {
+		utterances = append(utterances, attendantUtts...)
 	}
 
 	if len(utterances) == 0 {
 		return nil, fmt.Errorf("no utterances extracted from dual channel files")
 	}
 
-	// Sort utterances chronologically by start timestamp
+	// Sort utterances chronologically by start timestamp, prioritizing client "Alô" when timestamps are close
 	sortUtterances(utterances)
 
 	summary := fmt.Sprintf("Ligação transcrita com sucesso via Groq/Whisper (%d trechos).", len(utterances))
@@ -243,7 +243,16 @@ func (t *Transcriber) callWhisperSegments(ctx context.Context, wavPath, speaker,
 func sortUtterances(utts []TranscriptUtterance) {
 	for i := 0; i < len(utts); i++ {
 		for j := i + 1; j < len(utts); j++ {
-			if utts[j].Start < utts[i].Start {
+			diff := utts[j].Start - utts[i].Start
+			shouldSwap := false
+			if diff < -0.5 {
+				shouldSwap = true
+			} else if diff <= 0.5 {
+				if utts[j].Speaker == "cliente" && utts[i].Speaker == "atendente" {
+					shouldSwap = true
+				}
+			}
+			if shouldSwap {
 				utts[i], utts[j] = utts[j], utts[i]
 			}
 		}

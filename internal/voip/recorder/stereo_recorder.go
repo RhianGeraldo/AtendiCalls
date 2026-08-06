@@ -69,9 +69,11 @@ func (r *StereoRecorder) WriteClientPCM(pcm []float32) {
 	elapsed := time.Since(r.startTime).Seconds()
 	targetPos := int(elapsed * float64(SampleRate))
 
-	if len(r.clientSamples) < targetPos {
+	// Only insert silence padding for large gaps (>300ms = 4800 samples at 16kHz)
+	// to prevent network jitter (10ms-100ms) from chopping spoken words.
+	if targetPos-len(r.clientSamples) > 4800 {
 		gap := targetPos - len(r.clientSamples)
-		if gap > 0 && gap < 9600000 {
+		if gap < 9600000 {
 			r.clientSamples = append(r.clientSamples, make([]int16, gap)...)
 		}
 	}
@@ -92,9 +94,11 @@ func (r *StereoRecorder) WriteAttendantPCM(pcm []float32) {
 	elapsed := time.Since(r.startTime).Seconds()
 	targetPos := int(elapsed * float64(SampleRate))
 
-	if len(r.attendantSamples) < targetPos {
+	// Only insert silence padding for large gaps (>300ms = 4800 samples at 16kHz)
+	// to prevent network jitter (10ms-100ms) from chopping spoken words.
+	if targetPos-len(r.attendantSamples) > 4800 {
 		gap := targetPos - len(r.attendantSamples)
-		if gap > 0 && gap < 9600000 {
+		if gap < 9600000 {
 			r.attendantSamples = append(r.attendantSamples, make([]int16, gap)...)
 		}
 	}
