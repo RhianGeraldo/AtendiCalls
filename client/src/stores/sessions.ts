@@ -24,8 +24,8 @@ let wired = false;
 export const ensureSessionsWired = (): void => {
   if (wired) return;
   wired = true;
-  const authUser = useAuth.getState().user;
-  eventStream.connect(authUser?.id || getClientId());
+  const authState = useAuth.getState();
+  eventStream.connect(authState.user?.id || getClientId(), authState.token);
 
   void listSessions()
     .then((sessions) => useSessions.setState((s) => ({ sessions, activeId: pickActive(sessions, s.activeId) })))

@@ -29,9 +29,17 @@ class EventStream {
   #es: EventSource | null = null;
   #listeners = new Set<Listener>();
 
-  connect(clientId: string): void {
-    if (this.#es) return;
-    this.#es = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
+  connect(clientId: string, token?: string | null): void {
+    if (this.#es) {
+      this.#es.close();
+      this.#es = null;
+    }
+    const params = new URLSearchParams();
+    params.set("clientId", clientId);
+    if (token) {
+      params.set("token", token);
+    }
+    this.#es = new EventSource(`/api/events?${params.toString()}`);
     this.#es.onmessage = (ev) => {
       try {
         const parsed: BrokerEvent = JSON.parse(ev.data);

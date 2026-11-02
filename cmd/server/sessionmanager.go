@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"go.mau.fi/whatsmeow"
@@ -22,13 +23,16 @@ type SessionManager struct {
 	log         *slog.Logger
 	maxCalls    int
 	transcriber *Transcriber
+	settings    *settingsStore
+	agents      *aiAgentStore
+	webhook     *WebhookDispatcher
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	order    []string
 }
 
-func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int, settings *settingsStore) *SessionManager {
+func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int, settings *settingsStore, webhook *WebhookDispatcher, agents *aiAgentStore) *SessionManager {
 	return &SessionManager{
 		appCtx:      ctx,
 		container:   container,
@@ -38,6 +42,9 @@ func newSessionManager(ctx context.Context, container *sqlstore.Container, broke
 		log:         log,
 		maxCalls:    maxCalls,
 		transcriber: NewTranscriber(settings, log),
+		settings:    settings,
+		agents:      agents,
+		webhook:     webhook,
 		sessions:    map[string]*Session{},
 	}
 }
@@ -68,7 +75,40 @@ func (m *SessionManager) Get(id string) (*Session, bool) {
 	return s, ok
 }
 
-func (m *SessionManager) infos() []SessionInfo {
+func (m *SessionManager) GetByIDOrName(query string) (*Session, bool) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[query]; ok {
+		return s, true
+	}
+	for _, s := range m.sessions {
+		if strings.EqualFold(s.name, query) || s.token == query {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+func (m *SessionManager) GetByToken(token string) (*Session, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, s := range m.sessions {
+		if s.token == token {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+func (m *SessionManager) infos(userID ...string) []SessionInfo {
 	m.mu.RLock()
 	ordered := make([]*Session, 0, len(m.order))
 	for _, id := range m.order {
@@ -77,15 +117,27 @@ func (m *SessionManager) infos() []SessionInfo {
 		}
 	}
 	m.mu.RUnlock()
+
+	targetUID := ""
+	if len(userID) > 0 {
+		targetUID = userID[0]
+	}
+
 	out := make([]SessionInfo, 0, len(ordered))
 	for _, s := range ordered {
+		if targetUID != "" && s.userID != targetUID {
+			continue
+		}
 		out = append(out, s.info())
 	}
 	return out
 }
 
-func (m *SessionManager) snapshotEvents() []any {
-	return []any{map[string]any{"type": "session-list", "sessions": m.infos()}}
+func (m *SessionManager) snapshotEvents(userID, role string) []any {
+	if role == string(RoleAdmin) {
+		return []any{map[string]any{"type": "session-list", "sessions": m.infos()}}
+	}
+	return []any{map[string]any{"type": "session-list", "sessions": m.infos(userID)}}
 }
 
 func (m *SessionManager) Restore(ctx context.Context) error {
@@ -111,7 +163,7 @@ func (m *SessionManager) Restore(ctx context.Context) error {
 			continue
 		}
 		client := whatsmeow.NewClient(device, m.waLogger)
-		s := newSession(m, row.ID, row.Name, client)
+		s := newSession(m, row.ID, row.Name, row.Token, row.UserID, client)
 		m.register(s)
 		if err := s.connect(ctx); err != nil {
 			m.log.Error("session connect failed", "session", row.ID, "err", err)
@@ -122,22 +174,32 @@ func (m *SessionManager) Restore(ctx context.Context) error {
 	return nil
 }
 
-func (m *SessionManager) Create(name string) (string, error) {
+func (m *SessionManager) CreateForUser(name string, userID string, customToken ...string) (string, string, error) {
 	id := newSessionID()
-	if err := m.store.insert(m.appCtx, id, name); err != nil {
-		return "", err
+	token := ""
+	if len(customToken) > 0 && strings.TrimSpace(customToken[0]) != "" {
+		token = strings.TrimSpace(customToken[0])
+	} else {
+		token = newSessionToken()
+	}
+	if err := m.store.insert(m.appCtx, id, name, token, userID); err != nil {
+		return "", "", err
 	}
 	device := m.container.NewDevice()
 	client := whatsmeow.NewClient(device, m.waLogger)
-	s := newSession(m, id, name, client)
+	s := newSession(m, id, name, token, userID, client)
 	m.register(s)
 	m.broker.emitSessionList(m.infos())
 	if err := s.startPairing(m.appCtx); err != nil {
 		m.log.Error("start pairing failed", "session", id, "err", err)
-		return "", fmt.Errorf("start pairing: %w", err)
+		return "", "", fmt.Errorf("start pairing: %w", err)
 	}
-	m.log.Info("session created", "session", id, "name", name)
-	return id, nil
+	m.log.Info("session created", "session", id, "name", name, "token", token, "user_id", userID)
+	return id, token, nil
+}
+
+func (m *SessionManager) Create(name string, customToken ...string) (string, string, error) {
+	return m.CreateForUser(name, "", customToken...)
 }
 
 func (m *SessionManager) Rename(id, name string) error {

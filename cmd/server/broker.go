@@ -24,6 +24,7 @@ type CallRecord struct {
 	SessionPhone      string     `json:"sessionPhone,omitempty"`
 	SessionPictureURL string     `json:"sessionPictureUrl,omitempty"`
 	CallID            string     `json:"callId"`
+	UserID            string     `json:"userId,omitempty"`
 	Owner             *string    `json:"owner"`
 	Direction         string     `json:"direction"`
 	Peer              string     `json:"peer"`
@@ -50,6 +51,8 @@ type AuthSnapshot struct {
 type SessionInfo struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Token      string `json:"token,omitempty"`
+	UserID     string `json:"userId,omitempty"`
 	JID        string `json:"jid"`
 	Phone      string `json:"phone,omitempty"`
 	PushName   string `json:"pushName,omitempty"`
@@ -57,10 +60,13 @@ type SessionInfo struct {
 	StatusText string `json:"statusText,omitempty"`
 	State      string `json:"state"`
 	Paired     bool   `json:"paired"`
+	QR         string `json:"qr,omitempty"`
 }
 
 type subscriber struct {
 	clientID string
+	userID   string
+	role     string
 	ch       chan []byte
 }
 
@@ -71,7 +77,8 @@ type Broker struct {
 	history   []CallRecord
 	callStore *callStore
 
-	SnapshotFn func() []any
+	SnapshotFn     func(userID, role string) []any
+	SessionOwnerFn func(sessionID string) string
 }
 
 func NewBroker() *Broker {
@@ -81,8 +88,8 @@ func NewBroker() *Broker {
 	}
 }
 
-func (b *Broker) subscribe(clientID string) *subscriber {
-	s := &subscriber{clientID: clientID, ch: make(chan []byte, 32)}
+func (b *Broker) subscribe(clientID, userID, role string) *subscriber {
+	s := &subscriber{clientID: clientID, userID: userID, role: role, ch: make(chan []byte, 32)}
 	b.mu.Lock()
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
@@ -94,6 +101,31 @@ func (b *Broker) unsubscribe(s *subscriber) {
 	delete(b.subs, s)
 	b.mu.Unlock()
 	close(s.ch)
+}
+
+func (b *Broker) sessionOwner(sessionID string) string {
+	if b.SessionOwnerFn != nil && sessionID != "" {
+		return b.SessionOwnerFn(sessionID)
+	}
+	return ""
+}
+
+func (b *Broker) broadcastSessionScoped(sessionID string, ev any) {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	ownerID := b.sessionOwner(sessionID)
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for s := range b.subs {
+		if s.role == string(RoleAdmin) || (ownerID != "" && s.userID == ownerID) {
+			select {
+			case s.ch <- data:
+			default:
+			}
+		}
+	}
 }
 
 func (b *Broker) broadcast(ev any) {
@@ -112,22 +144,46 @@ func (b *Broker) broadcast(ev any) {
 }
 
 func (b *Broker) emitAuthState(sessionID string, a AuthSnapshot) {
-	b.broadcast(map[string]any{
+	b.broadcastSessionScoped(sessionID, map[string]any{
 		"type": "auth-state", "sessionId": sessionID,
 		"paired": a.Paired, "state": a.State, "qr": a.QR,
 	})
 }
 
 func (b *Broker) emitSessionList(sessions []SessionInfo) {
-	b.broadcast(map[string]any{"type": "session-list", "sessions": sessions})
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for s := range b.subs {
+		var userSessions []SessionInfo
+		if s.role == string(RoleAdmin) {
+			userSessions = sessions
+		} else {
+			userSessions = make([]SessionInfo, 0)
+			for _, sess := range sessions {
+				if sess.UserID == s.userID {
+					userSessions = append(userSessions, sess)
+				}
+			}
+		}
+		data, err := json.Marshal(map[string]any{"type": "session-list", "sessions": userSessions})
+		if err == nil {
+			select {
+			case s.ch <- data:
+			default:
+			}
+		}
+	}
 }
 
 func (b *Broker) emitSessionQR(sessionID, qr string) {
-	b.broadcast(map[string]any{"type": "session-qr", "sessionId": sessionID, "qr": qr})
+	b.broadcastSessionScoped(sessionID, map[string]any{"type": "session-qr", "sessionId": sessionID, "qr": qr})
 }
 
 func (b *Broker) upsertCall(r CallRecord) {
 	b.mu.Lock()
+	if r.UserID == "" {
+		r.UserID = b.sessionOwner(r.SessionID)
+	}
 	cp := r
 	b.calls[r.CallID] = &cp
 	cs := b.callStore
@@ -140,7 +196,7 @@ func (b *Broker) upsertCall(r CallRecord) {
 	}
 
 	b.broadcastCallList()
-	b.broadcast(map[string]any{
+	b.broadcastSessionScoped(r.SessionID, map[string]any{
 		"type": "call-status", "sessionId": r.SessionID, "id": r.CallID, "owner": r.Owner,
 		"status": r.Status, "peer": r.Peer, "startedAt": r.StartedAt, "connectedAt": r.ConnectedAt,
 	})
@@ -180,7 +236,7 @@ func (b *Broker) setOwner(id, owner string) bool {
 	}
 
 	b.broadcastCallList()
-	b.broadcast(map[string]any{
+	b.broadcastSessionScoped(c.SessionID, map[string]any{
 		"type": "call-status", "sessionId": c.SessionID, "id": c.CallID, "owner": c.Owner,
 		"status": c.Status, "peer": c.Peer, "startedAt": c.StartedAt, "connectedAt": c.ConnectedAt,
 	})
@@ -227,30 +283,63 @@ func (b *Broker) endCall(id, reason string) {
 		}()
 	}
 
-	b.broadcast(map[string]any{
+	b.broadcastSessionScoped(sessionID, map[string]any{
 		"type": "call-ended", "sessionId": sessionID, "id": id, "owner": owner, "reason": reason, "endedAt": now,
 	})
 	b.broadcastCallList()
 }
 
-func (b *Broker) broadcastCallList() {
+func (b *Broker) activeCalls() []CallRecord {
 	b.mu.RLock()
+	defer b.mu.RUnlock()
 	list := make([]CallRecord, 0, len(b.calls))
 	for _, c := range b.calls {
 		list = append(list, *c)
 	}
+	return list
+}
+
+func (b *Broker) broadcastCallList() {
+	b.mu.RLock()
+	callsCopy := make([]CallRecord, 0, len(b.calls))
+	for _, c := range b.calls {
+		callsCopy = append(callsCopy, *c)
+	}
 	b.mu.RUnlock()
-	b.broadcast(map[string]any{"type": "call-list", "calls": list})
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for s := range b.subs {
+		var userCalls []CallRecord
+		if s.role == string(RoleAdmin) {
+			userCalls = callsCopy
+		} else {
+			userCalls = make([]CallRecord, 0)
+			for _, c := range callsCopy {
+				owner := b.sessionOwner(c.SessionID)
+				if c.UserID == s.userID || (owner != "" && owner == s.userID) {
+					userCalls = append(userCalls, c)
+				}
+			}
+		}
+		data, err := json.Marshal(map[string]any{"type": "call-list", "calls": userCalls})
+		if err == nil {
+			select {
+			case s.ch <- data:
+			default:
+			}
+		}
+	}
 }
 
 func (b *Broker) emitIncoming(sessionID, id, peer, name, pictureUrl string) {
-	b.broadcast(map[string]any{
+	b.broadcastSessionScoped(sessionID, map[string]any{
 		"type": "incoming", "sessionId": sessionID, "id": id, "peer": peer, "name": name, "pictureUrl": pictureUrl, "offeredAt": time.Now().UnixMilli(),
 	})
 }
 
 func (b *Broker) emitIncomingClaimed(sessionID, id, owner string) {
-	b.broadcast(map[string]any{"type": "incoming-claimed", "sessionId": sessionID, "id": id, "owner": owner})
+	b.broadcastSessionScoped(sessionID, map[string]any{"type": "incoming-claimed", "sessionId": sessionID, "id": id, "owner": owner})
 }
 
 func (b *Broker) historyRows(sessionID string, limit int) []CallRecord {
@@ -279,7 +368,7 @@ func (b *Broker) historyRows(sessionID string, limit int) []CallRecord {
 	return rows
 }
 
-func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID string) {
+func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID, userID, role string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -290,15 +379,36 @@ func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID strin
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	sub := b.subscribe(clientID)
+	sub := b.subscribe(clientID, userID, role)
 	defer b.unsubscribe(sub)
 
 	if b.SnapshotFn != nil {
-		for _, ev := range b.SnapshotFn() {
+		for _, ev := range b.SnapshotFn(userID, role) {
 			writeSSE(w, flusher, ev)
 		}
 	}
-	b.broadcastCallList()
+
+	// Send initial call-list tailored to this subscriber
+	b.mu.RLock()
+	callsCopy := make([]CallRecord, 0, len(b.calls))
+	for _, c := range b.calls {
+		callsCopy = append(callsCopy, *c)
+	}
+	b.mu.RUnlock()
+
+	var userCalls []CallRecord
+	if role == string(RoleAdmin) {
+		userCalls = callsCopy
+	} else {
+		userCalls = make([]CallRecord, 0)
+		for _, c := range callsCopy {
+			owner := b.sessionOwner(c.SessionID)
+			if c.UserID == userID || (owner != "" && owner == userID) {
+				userCalls = append(userCalls, c)
+			}
+		}
+	}
+	writeSSE(w, flusher, map[string]any{"type": "call-list", "calls": userCalls})
 
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()

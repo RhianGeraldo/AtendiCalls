@@ -16,7 +16,7 @@ export const listUsersApi = async (): Promise<User[]> => {
   return data.users ?? [];
 };
 
-export const createUserApi = async (payload: { name: string; email: string; password: string; role: UserRole }): Promise<User> => {
+export const createUserApi = async (payload: { name: string; email: string; password: string; role: UserRole; planId?: string }): Promise<User> => {
   const r = await fetch("/api/users", {
     method: "POST",
     headers: getHeaders(),
@@ -35,6 +35,28 @@ export const updateUserApi = async (id: string, payload: { name?: string; email?
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || "Falha ao atualizar usuário.");
+  return data.user;
+};
+
+export const updateUserPlanApi = async (id: string, planId: string, customMaxInstances: number): Promise<User> => {
+  const r = await fetch(`/api/users/${id}/plan`, {
+    method: "PATCH",
+    headers: getHeaders(),
+    body: JSON.stringify({ planId, customMaxInstances }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Falha ao atualizar plano do usuário.");
+  return data.user;
+};
+
+export const updateUserStatusApi = async (id: string, status: "active" | "suspended"): Promise<User> => {
+  const r = await fetch(`/api/users/${id}/status`, {
+    method: "PATCH",
+    headers: getHeaders(),
+    body: JSON.stringify({ status }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Falha ao atualizar status do usuário.");
   return data.user;
 };
 

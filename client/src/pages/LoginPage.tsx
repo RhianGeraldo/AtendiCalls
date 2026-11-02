@@ -5,11 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/stores/auth";
 
-export const LoginPage = () => {
+interface LoginPageProps {
+  onSuccess?: () => void;
+}
+
+export const LoginPage = ({ onSuccess }: LoginPageProps) => {
   const login = useAuth((s) => s.login);
 
-  const [email, setEmail] = useState("admin@admin.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -21,6 +25,12 @@ export const LoginPage = () => {
     try {
       await login(email, password);
       toast.success("Login realizado com sucesso!");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        window.history.pushState({}, "", "/");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
     } catch (err: any) {
       setErrorMsg(err.message || "E-mail ou senha incorretos.");
     } finally {
@@ -56,9 +66,10 @@ export const LoginPage = () => {
             </label>
             <Input
               type="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu.email@atendicalls.com"
+              placeholder="seu.email@empresa.com"
               required
               className="rounded-xl"
             />
@@ -70,6 +81,7 @@ export const LoginPage = () => {
             </label>
             <Input
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -81,16 +93,25 @@ export const LoginPage = () => {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 shadow-md"
+            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 shadow-md cursor-pointer transition-all"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar no Sistema"}
           </Button>
         </form>
 
-        {/* Footer info */}
-        <div className="border-t border-muted/50 pt-4 text-center text-[11px] text-muted-foreground">
-          <p>Credenciais Padrão Admin:</p>
-          <p className="font-mono text-foreground font-medium">admin@admin.com / admin123</p>
+        {/* Footer Link to Register */}
+        <div className="border-t border-muted/50 pt-4 text-center text-xs text-muted-foreground">
+          <span>Não possui uma conta? </span>
+          <button
+            type="button"
+            onClick={() => {
+              window.history.pushState({}, "", "/register");
+              window.dispatchEvent(new PopStateEvent("popstate"));
+            }}
+            className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer inline-flex items-center gap-1"
+          >
+            Cadastre-se grátis
+          </button>
         </div>
       </div>
     </div>

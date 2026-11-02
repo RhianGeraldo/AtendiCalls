@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Power, QrCode, Pencil } from "lucide-react";
+import { Loader2, Power, QrCode, Pencil, Copy, Key } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,43 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
               <Pencil className="h-4 w-4" />
             </button>
             <Badge variant={statusVariant[session.state]}>{statusLabel[session.state]}</Badge>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              ID: <code className="font-mono select-all">{session.id}</code>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(session.id);
+                  toast.success("ID da instância copiado");
+                }}
+                className="p-0.5 rounded hover:text-foreground"
+                title="Copiar ID da instância"
+                aria-label="Copiar ID da instância"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </span>
+
+            {session.token && (
+              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                <Key className="h-3 w-3 shrink-0" />
+                Token: <code className="font-mono select-all text-foreground">{session.token}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(session.token || "");
+                    toast.success("Token da instância copiado!");
+                  }}
+                  className="p-0.5 rounded hover:text-foreground"
+                  title="Copiar Token da Instância"
+                  aria-label="Copiar Token da Instância"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+              </span>
+            )}
           </div>
 
           {(session.pushName || session.phone) && (

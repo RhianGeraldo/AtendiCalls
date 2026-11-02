@@ -9,9 +9,28 @@ run-mlow.ps1
 /bin/
 atendicalls.db
 *.db
+*.db*
+*.sqlite
+*.sqlite3
 *.db-journal
 *.db-wal
 *.db-shm
+sessions/
+store/
+auth_info/
+
+# Environment, Secrets & Keys
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+
+# Logs & Dumps
+*.log
+logs/
 /auth/
 /data/
 client/node_modules/

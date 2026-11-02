@@ -4,6 +4,7 @@ import (
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/media"
 	"atendicalls/internal/voip/transport"
+	"fmt"
 	"time"
 )
 
@@ -123,14 +124,21 @@ func (m *CallManager) onRelayData(data []byte) {
 		return
 	}
 	pt := data[1] & 0x7f
-	if pt != core.PayloadTypeWhatsAppOpus {
+	if pt != core.PayloadTypeWhatsAppOpus && pt != core.PayloadTypeWhatsAppOpusAlt {
+		if pt != 72 && pt != 74 && pt != 77 && pt != 78 && pt != 80 {
+			m.log.Debug("onRelayData: non-audio payload type", "pt", pt)
+		}
 		return
 	}
 
 	m.mu.Lock()
 	if m.srtpSession == nil || m.codec == nil {
+		m.log.Warn("onRelayData: srtpSession or codec nil", "srtp", m.srtpSession != nil, "codec", m.codec != nil)
 		m.mu.Unlock()
 		return
+	}
+	if m.rtpSession != nil && m.rtpSession.PayloadType() != pt {
+		m.rtpSession.SetPayloadType(pt)
 	}
 	ssrc := uint32(data[8])<<24 | uint32(data[9])<<16 | uint32(data[10])<<8 | uint32(data[11])
 	if ssrc == m.selfSsrc {
@@ -151,7 +159,7 @@ func (m *CallManager) onRelayData(data []byte) {
 
 	pkt, err := srtp.Unprotect(data)
 	if err != nil {
-		m.log.Debug("srtp unprotect error", "err", err)
+		m.log.Warn("onRelayData: srtp unprotect error", "err", err)
 		return
 	}
 	if len(pkt.Payload) == 0 {
@@ -159,9 +167,27 @@ func (m *CallManager) onRelayData(data []byte) {
 	}
 	pcm, err := codec.Decode(pkt.Payload)
 	if err != nil {
+		m.log.Warn("onRelayData: codec decode error", "err", err)
 		return
 	}
 	pcm = media.NormalizeFrame(pcm, codec.FrameSize())
+
+	hasAudio := false
+	for _, s := range pcm {
+		if s > 0.01 || s < -0.01 {
+			hasAudio = true
+			break
+		}
+	}
+	if hasAudio {
+		m.log.Debug("onRelayData: non-zero audio received!", "samples", len(pcm), "payloadLen", len(pkt.Payload), "firstByte", fmt.Sprintf("0x%02x", pkt.Payload[0]))
+	} else {
+		m.log.Debug("onRelayData: decoded audio is silence", "payloadLen", len(pkt.Payload), "firstByte", fmt.Sprintf("0x%02x", pkt.Payload[0]))
+		for i := range pcm {
+			pcm[i] = 0
+		}
+	}
+
 	if m.OnPeerAudio != nil {
 		m.OnPeerAudio(pcm)
 	}

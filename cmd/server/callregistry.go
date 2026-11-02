@@ -5,11 +5,19 @@ import (
 	"sync"
 
 	"atendicalls/internal/voip/call"
+	"atendicalls/internal/voip/voiceagent"
+
+	"go.mau.fi/whatsmeow/types"
 )
 
 type activeCall struct {
-	cm     *call.CallManager
-	bridge *Bridge
+	cm         *call.CallManager
+	bridge     *Bridge
+	voiceAgent voiceagent.VoiceAgent
+	agentCfg   *voiceagent.AgentConfig
+	webhookURL string
+	mode       string // "human" or "ai"
+	peer       types.JID
 }
 
 type callRegistry struct {

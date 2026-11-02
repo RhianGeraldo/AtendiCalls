@@ -34,17 +34,17 @@ func newTestManager(t *testing.T) *SessionManager {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newSessionManager(ctx, container, NewBroker(), store, waLog.Noop, slog.Default(), 0, settings)
+	return newSessionManager(ctx, container, NewBroker(), store, waLog.Noop, slog.Default(), 0, settings, NewWebhookDispatcher(slog.Default()), nil)
 }
 
 func (m *SessionManager) addUnconnected(t *testing.T, name string) *Session {
 	t.Helper()
 	id := newSessionID()
-	if err := m.store.insert(m.appCtx, id, name); err != nil {
+	if err := m.store.insert(m.appCtx, id, name, "test_token_"+id, ""); err != nil {
 		t.Fatal(err)
 	}
 	client := whatsmeow.NewClient(m.container.NewDevice(), waLog.Noop)
-	s := newSession(m, id, name, client)
+	s := newSession(m, id, name, "test_token_"+id, "", client)
 	m.register(s)
 	return s
 }

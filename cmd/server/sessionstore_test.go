@@ -25,7 +25,7 @@ func TestSessionStoreRoundtrip(t *testing.T) {
 	if len(id) != 32 {
 		t.Fatalf("session id should be 32 hex chars, got %d", len(id))
 	}
-	if err := st.insert(ctx, id, "Account A"); err != nil {
+	if err := st.insert(ctx, id, "Account A", "", ""); err != nil {
 		t.Fatal(err)
 	}
 

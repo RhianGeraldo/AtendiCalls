@@ -175,6 +175,14 @@ func NewWhatsAppOpusSession(ssrc uint32) *RtpSession {
 	return NewRtpSession(ssrc, core.PayloadTypeWhatsAppOpus, 16000, 960)
 }
 
+func (s *RtpSession) PayloadType() uint8 {
+	return s.payloadType
+}
+
+func (s *RtpSession) SetPayloadType(pt uint8) {
+	s.payloadType = pt
+}
+
 func (s *RtpSession) CreatePacket(payload []byte, marker bool) *RtpPacket {
 	return s.CreatePacketWithDuration(payload, s.samplesPerPacket, marker)
 }

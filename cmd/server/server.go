@@ -14,12 +14,15 @@ type server struct {
 	broker      *Broker
 	sessions    *SessionManager
 	users       *userStore
+	plans       *planStore
 	calls       *callStore
 	contacts    *contactStore
 	campaigns   *campaignStore
 	playbooks   *playbookStore
 	settings    *settingsStore
+	agents      *aiAgentStore
 	transcriber *Transcriber
+	webhook     *WebhookDispatcher
 	log         *slog.Logger
 	staticDir   string
 }
@@ -73,6 +76,11 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return nil, err
 	}
 
+	agentStore, err := newAIAgentStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "INFO", true)
@@ -80,8 +88,21 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 
 	broker := NewBroker()
 	broker.callStore = callStore
-	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls, settingsStore)
+	webhook := NewWebhookDispatcher(log)
+	webhook.settings = settingsStore
+	mgr := newSessionManager(ctx, container, broker, store, waLogger, log, maxCalls, settingsStore, webhook, agentStore)
 	broker.SnapshotFn = mgr.snapshotEvents
+	broker.SessionOwnerFn = func(sessionID string) string {
+		if sess, ok := mgr.Get(sessionID); ok {
+			return sess.userID
+		}
+		return ""
+	}
+
+	planStore, err := newPlanStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 
 	userStore, err := newUserStore(ctx, db)
 	if err != nil {
@@ -94,12 +115,15 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		broker:      broker,
 		sessions:    mgr,
 		users:       userStore,
+		plans:       planStore,
 		calls:       callStore,
 		contacts:    contactStore,
 		campaigns:   campaignStore,
 		playbooks:   playbookStore,
 		settings:    settingsStore,
+		agents:      agentStore,
 		transcriber: transcriber,
+		webhook:     webhook,
 		log:         log,
 		staticDir:   staticDir,
 	}, nil

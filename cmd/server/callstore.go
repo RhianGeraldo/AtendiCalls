@@ -10,6 +10,7 @@ import (
 
 type CallFilter struct {
 	SessionID string `json:"sessionId"`
+	UserID    string `json:"userId,omitempty"`
 	Owner     string `json:"owner"`
 	Direction string `json:"direction"`
 	Status    string `json:"status"`
@@ -104,6 +105,7 @@ func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
 	}
 
 	// Auto-migrations for new columns
+	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN user_id TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_name TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_phone TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_picture_url TEXT DEFAULT ''`)
@@ -111,6 +113,8 @@ func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_json TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_summary TEXT DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcription_status TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_call_records_user ON call_records(user_id)`)
+	_, _ = db.ExecContext(ctx, `UPDATE call_records SET user_id = (SELECT user_id FROM sessions WHERE sessions.id = call_records.session_id) WHERE (user_id = '' OR user_id IS NULL) AND EXISTS (SELECT 1 FROM sessions WHERE sessions.id = call_records.session_id)`)
 
 	return &callStore{db: db}, nil
 }
@@ -132,12 +136,18 @@ func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
 		durationSec = (*endedAt - *connectedAt) / 1000
 	}
 
+	userID := rec.UserID
+	if userID == "" && rec.SessionID != "" {
+		_ = cs.db.QueryRowContext(ctx, `SELECT user_id FROM sessions WHERE id = ?`, rec.SessionID).Scan(&userID)
+	}
+
 	query := `
 	INSERT INTO call_records (
-		id, session_id, session_name, session_phone, session_picture_url, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		id, session_id, user_id, session_name, session_phone, session_picture_url, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		session_id = excluded.session_id,
+		user_id = CASE WHEN excluded.user_id != '' THEN excluded.user_id ELSE call_records.user_id END,
 		session_name = CASE WHEN excluded.session_name != '' THEN excluded.session_name ELSE call_records.session_name END,
 		session_phone = CASE WHEN excluded.session_phone != '' THEN excluded.session_phone ELSE call_records.session_phone END,
 		session_picture_url = CASE WHEN excluded.session_picture_url != '' THEN excluded.session_picture_url ELSE call_records.session_picture_url END,
@@ -155,7 +165,7 @@ func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
 	`
 
 	_, err := cs.db.ExecContext(ctx, query,
-		rec.CallID, rec.SessionID, rec.SessionName, rec.SessionPhone, rec.SessionPictureURL, rec.Direction, rec.Peer, rec.Name, rec.PictureURL,
+		rec.CallID, rec.SessionID, userID, rec.SessionName, rec.SessionPhone, rec.SessionPictureURL, rec.Direction, rec.Peer, rec.Name, rec.PictureURL,
 		ownerStr, string(rec.Status), rec.StartedAt, connectedAt, endedAt, durationSec, rec.EndReason,
 	)
 	return err
@@ -171,6 +181,10 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	if filter.SessionID != "" {
 		whereClause = append(whereClause, "session_id = ?")
 		args = append(args, filter.SessionID)
+	}
+	if filter.UserID != "" {
+		whereClause = append(whereClause, "(user_id = ? OR session_id IN (SELECT id FROM sessions WHERE user_id = ?))")
+		args = append(args, filter.UserID, filter.UserID)
 	}
 	if filter.Owner != "" {
 		whereClause = append(whereClause, "owner = ?")
@@ -218,7 +232,7 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	offset := (page - 1) * limit
 
 	query := fmt.Sprintf(`
-		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
+		SELECT id, session_id, COALESCE(user_id, ''), COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
 		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
 		FROM call_records
 		WHERE %s
@@ -241,7 +255,7 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 		var connAt, endAt sql.NullInt64
 
 		err := rows.Scan(
-			&r.CallID, &r.SessionID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
+			&r.CallID, &r.SessionID, &r.UserID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
 			&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
 			&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
 		)
@@ -287,7 +301,7 @@ func (cs *callStore) GetCallRecord(ctx context.Context, callID string) (*CallRec
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	query := `
-		SELECT id, session_id, COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
+		SELECT id, session_id, COALESCE(user_id, ''), COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
 		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
 		FROM call_records WHERE id = ?
 	`
@@ -297,7 +311,7 @@ func (cs *callStore) GetCallRecord(ctx context.Context, callID string) (*CallRec
 	var connAt, endAt sql.NullInt64
 
 	err := cs.db.QueryRowContext(ctx, query, callID).Scan(
-		&r.CallID, &r.SessionID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
+		&r.CallID, &r.SessionID, &r.UserID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
 		&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
 		&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
 	)
@@ -329,6 +343,10 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	if filter.SessionID != "" {
 		whereClause = append(whereClause, "session_id = ?")
 		args = append(args, filter.SessionID)
+	}
+	if filter.UserID != "" {
+		whereClause = append(whereClause, "(user_id = ? OR session_id IN (SELECT id FROM sessions WHERE user_id = ?))")
+		args = append(args, filter.UserID, filter.UserID)
 	}
 	if filter.Owner != "" {
 		whereClause = append(whereClause, "owner = ?")

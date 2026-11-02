@@ -44,6 +44,7 @@ type CampaignItem struct {
 
 type Campaign struct {
 	ID           string         `json:"id"`
+	UserID       string         `json:"userId,omitempty"`
 	Name         string         `json:"name"`
 	SessionID    string         `json:"sessionId"`
 	SessionName  string         `json:"sessionName,omitempty"`
@@ -98,6 +99,9 @@ func newCampaignStore(ctx context.Context, db *sql.DB) (*campaignStore, error) {
 		return nil, fmt.Errorf("failed to create campaigns tables: %w", err)
 	}
 
+	_, _ = db.ExecContext(ctx, `ALTER TABLE campaigns ADD COLUMN user_id TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_campaigns_user_id ON campaigns(user_id)`)
+
 	return &campaignStore{db: db}, nil
 }
 
@@ -122,8 +126,8 @@ func (cs *campaignStore) Create(ctx context.Context, c Campaign, items []Campaig
 	}
 	defer tx.Rollback()
 
-	queryCmp := `INSERT INTO campaigns (id, name, session_id, playbook, delay_seconds, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = tx.ExecContext(ctx, queryCmp, c.ID, c.Name, c.SessionID, c.Playbook, c.DelaySeconds, c.Status, c.CreatedAt, c.UpdatedAt)
+	queryCmp := `INSERT INTO campaigns (id, user_id, name, session_id, playbook, delay_seconds, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = tx.ExecContext(ctx, queryCmp, c.ID, c.UserID, c.Name, c.SessionID, c.Playbook, c.DelaySeconds, c.Status, c.CreatedAt, c.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create campaign: %w", err)
 	}
@@ -146,9 +150,9 @@ func (cs *campaignStore) Create(ctx context.Context, c Campaign, items []Campaig
 
 func (cs *campaignStore) getByIDUnlocked(ctx context.Context, id string) (*Campaign, error) {
 	var c Campaign
-	queryCmp := `SELECT id, name, session_id, playbook, delay_seconds, status, created_at, updated_at FROM campaigns WHERE id = ?`
+	queryCmp := `SELECT id, COALESCE(user_id, ''), name, session_id, playbook, delay_seconds, status, created_at, updated_at FROM campaigns WHERE id = ?`
 	err := cs.db.QueryRowContext(ctx, queryCmp, id).Scan(
-		&c.ID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt,
+		&c.ID, &c.UserID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -192,21 +196,29 @@ func (cs *campaignStore) GetByID(ctx context.Context, id string) (*Campaign, err
 	return cs.getByIDUnlocked(ctx, id)
 }
 
-func (cs *campaignStore) List(ctx context.Context) ([]Campaign, error) {
+func (cs *campaignStore) List(ctx context.Context, userID string) ([]Campaign, error) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
-	query := `
+	whereStmt := ""
+	var args []any
+	if userID != "" {
+		whereStmt = "WHERE c.user_id = ? OR c.session_id IN (SELECT id FROM sessions WHERE user_id = ?)"
+		args = append(args, userID, userID)
+	}
+
+	query := fmt.Sprintf(`
 	SELECT 
-		c.id, c.name, c.session_id, c.playbook, c.delay_seconds, c.status, c.created_at, c.updated_at,
+		c.id, COALESCE(c.user_id, ''), c.name, c.session_id, c.playbook, c.delay_seconds, c.status, c.created_at, c.updated_at,
 		COUNT(i.id) AS total_items,
 		COALESCE(SUM(CASE WHEN i.status IS NOT NULL AND i.status != 'pending' AND i.status != 'calling' THEN 1 ELSE 0 END), 0) AS done_items
 	FROM campaigns c
 	LEFT JOIN campaign_items i ON i.campaign_id = c.id
+	%s
 	GROUP BY c.id
 	ORDER BY c.created_at DESC
-	`
-	rows, err := cs.db.QueryContext(ctx, query)
+	`, whereStmt)
+	rows, err := cs.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +227,7 @@ func (cs *campaignStore) List(ctx context.Context) ([]Campaign, error) {
 	list := make([]Campaign, 0)
 	for rows.Next() {
 		var c Campaign
-		if err := rows.Scan(&c.ID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.TotalItems, &c.DoneItems); err == nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.TotalItems, &c.DoneItems); err == nil {
 			list = append(list, c)
 		}
 	}

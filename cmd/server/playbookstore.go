@@ -11,6 +11,7 @@ import (
 
 type Playbook struct {
 	ID        string `json:"id"`
+	UserID    string `json:"userId,omitempty"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	Category  string `json:"category"`
@@ -39,6 +40,9 @@ func newPlaybookStore(ctx context.Context, db *sql.DB) (*playbookStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create playbooks table: %w", err)
 	}
+
+	_, _ = db.ExecContext(ctx, `ALTER TABLE playbooks ADD COLUMN user_id TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_playbooks_user_id ON playbooks(user_id)`)
 
 	ps := &playbookStore{db: db}
 	ps.seedDefaults(ctx)
@@ -137,12 +141,25 @@ func (ps *playbookStore) Create(ctx context.Context, p Playbook) (*Playbook, err
 
 	p.Title = strings.TrimSpace(p.Title)
 
-	query := `INSERT INTO playbooks (id, title, content, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
-	_, err := ps.db.ExecContext(ctx, query, p.ID, p.Title, p.Content, p.Category, p.CreatedAt, p.UpdatedAt)
+	query := `INSERT INTO playbooks (id, user_id, title, content, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := ps.db.ExecContext(ctx, query, p.ID, p.UserID, p.Title, p.Content, p.Category, p.CreatedAt, p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save playbook: %w", err)
 	}
 
+	return &p, nil
+}
+
+func (ps *playbookStore) GetByID(ctx context.Context, id string) (*Playbook, error) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	var p Playbook
+	query := `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks WHERE id = ?`
+	err := ps.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.UserID, &p.Title, &p.Content, &p.Category, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
 	return &p, nil
 }
 
@@ -175,12 +192,20 @@ func (ps *playbookStore) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-func (ps *playbookStore) List(ctx context.Context) ([]Playbook, error) {
+func (ps *playbookStore) List(ctx context.Context, userID string) ([]Playbook, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	query := `SELECT id, title, content, category, created_at, updated_at FROM playbooks ORDER BY title ASC`
-	rows, err := ps.db.QueryContext(ctx, query)
+	var query string
+	var args []any
+	if userID != "" {
+		query = `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks WHERE user_id = ? OR user_id = '' ORDER BY title ASC`
+		args = append(args, userID)
+	} else {
+		query = `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks ORDER BY title ASC`
+	}
+
+	rows, err := ps.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +214,7 @@ func (ps *playbookStore) List(ctx context.Context) ([]Playbook, error) {
 	list := make([]Playbook, 0)
 	for rows.Next() {
 		var p Playbook
-		if err := rows.Scan(&p.ID, &p.Title, &p.Content, &p.Category, &p.CreatedAt, &p.UpdatedAt); err == nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Title, &p.Content, &p.Category, &p.CreatedAt, &p.UpdatedAt); err == nil {
 			list = append(list, p)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 
 type Contact struct {
 	ID         string `json:"id"`
+	UserID     string `json:"userId,omitempty"`
 	Name       string `json:"name"`
 	Phone      string `json:"phone"`
 	Company    string `json:"company"`
@@ -21,6 +22,7 @@ type Contact struct {
 }
 
 type ContactFilter struct {
+	UserID string `json:"userId,omitempty"`
 	Search string `json:"search"`
 	Page   int    `json:"page"`
 	Limit  int    `json:"limit"`
@@ -42,7 +44,7 @@ func newContactStore(ctx context.Context, db *sql.DB) (*contactStore, error) {
 	query := `CREATE TABLE IF NOT EXISTS contacts (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
-		phone TEXT NOT NULL UNIQUE,
+		phone TEXT NOT NULL,
 		company TEXT DEFAULT '',
 		notes TEXT DEFAULT '',
 		picture_url TEXT DEFAULT '',
@@ -56,6 +58,9 @@ func newContactStore(ctx context.Context, db *sql.DB) (*contactStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create contacts table: %w", err)
 	}
+
+	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN user_id TEXT DEFAULT ''`)
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_user_id ON contacts(user_id)`)
 
 	return &contactStore{db: db}, nil
 }
@@ -76,19 +81,29 @@ func (cs *contactStore) Create(ctx context.Context, c Contact) (*Contact, error)
 	// Clean phone number (strip whitespace and non-digit characters except leading +)
 	c.Phone = strings.TrimSpace(c.Phone)
 
-	query := `
-	INSERT INTO contacts (id, name, phone, company, notes, picture_url, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(phone) DO UPDATE SET
-		name = excluded.name,
-		company = excluded.company,
-		notes = excluded.notes,
-		picture_url = CASE WHEN excluded.picture_url != '' THEN excluded.picture_url ELSE contacts.picture_url END,
-		updated_at = excluded.updated_at
-	`
-	_, err := cs.db.ExecContext(ctx, query, c.ID, c.Name, c.Phone, c.Company, c.Notes, c.PictureURL, c.CreatedAt, c.UpdatedAt)
+	var existingID string
+	if c.UserID != "" {
+		_ = cs.db.QueryRowContext(ctx, `SELECT id FROM contacts WHERE user_id = ? AND phone = ?`, c.UserID, c.Phone).Scan(&existingID)
+	} else {
+		_ = cs.db.QueryRowContext(ctx, `SELECT id FROM contacts WHERE phone = ?`, c.Phone).Scan(&existingID)
+	}
+
+	if existingID != "" {
+		c.ID = existingID
+		query := `UPDATE contacts SET name = ?, company = ?, notes = ?, picture_url = CASE WHEN ? != '' THEN ? ELSE picture_url END, updated_at = ? WHERE id = ?`
+		_, err := cs.db.ExecContext(ctx, query, c.Name, c.Company, c.Notes, c.PictureURL, c.PictureURL, c.UpdatedAt, c.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update existing contact: %w", err)
+		}
+		return &c, nil
+	}
+
+	query := `INSERT INTO contacts (id, user_id, name, phone, company, notes, picture_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := cs.db.ExecContext(ctx, query, c.ID, c.UserID, c.Name, c.Phone, c.Company, c.Notes, c.PictureURL, c.CreatedAt, c.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save contact: %w", err)
+		// Fallback update if conflict on phone exists
+		updQuery := `UPDATE contacts SET name = ?, company = ?, notes = ?, picture_url = CASE WHEN ? != '' THEN ? ELSE picture_url END, updated_at = ? WHERE phone = ?`
+		_, _ = cs.db.ExecContext(ctx, updQuery, c.Name, c.Company, c.Notes, c.PictureURL, c.PictureURL, c.UpdatedAt, c.Phone)
 	}
 
 	return &c, nil
@@ -132,9 +147,9 @@ func (cs *contactStore) GetByID(ctx context.Context, id string) (*Contact, error
 	defer cs.mu.RUnlock()
 
 	var c Contact
-	query := `SELECT id, name, phone, company, notes, picture_url, created_at, updated_at FROM contacts WHERE id = ?`
+	query := `SELECT id, COALESCE(user_id, ''), name, phone, company, notes, picture_url, created_at, updated_at FROM contacts WHERE id = ?`
 	err := cs.db.QueryRowContext(ctx, query, id).Scan(
-		&c.ID, &c.Name, &c.Phone, &c.Company, &c.Notes, &c.PictureURL, &c.CreatedAt, &c.UpdatedAt,
+		&c.ID, &c.UserID, &c.Name, &c.Phone, &c.Company, &c.Notes, &c.PictureURL, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -148,6 +163,11 @@ func (cs *contactStore) List(ctx context.Context, filter ContactFilter) (*Contac
 
 	whereClause := []string{"1=1"}
 	args := []any{}
+
+	if filter.UserID != "" {
+		whereClause = append(whereClause, "user_id = ?")
+		args = append(args, filter.UserID)
+	}
 
 	if filter.Search != "" {
 		whereClause = append(whereClause, "(name LIKE ? OR phone LIKE ? OR company LIKE ? OR notes LIKE ?)")
@@ -175,7 +195,7 @@ func (cs *contactStore) List(ctx context.Context, filter ContactFilter) (*Contac
 	offset := (page - 1) * limit
 
 	query := fmt.Sprintf(`
-		SELECT id, name, phone, company, notes, picture_url, created_at, updated_at
+		SELECT id, COALESCE(user_id, ''), name, phone, company, notes, picture_url, created_at, updated_at
 		FROM contacts
 		WHERE %s
 		ORDER BY name ASC
@@ -192,7 +212,7 @@ func (cs *contactStore) List(ctx context.Context, filter ContactFilter) (*Contac
 	contacts := make([]Contact, 0)
 	for rows.Next() {
 		var c Contact
-		if err := rows.Scan(&c.ID, &c.Name, &c.Phone, &c.Company, &c.Notes, &c.PictureURL, &c.CreatedAt, &c.UpdatedAt); err == nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.Phone, &c.Company, &c.Notes, &c.PictureURL, &c.CreatedAt, &c.UpdatedAt); err == nil {
 			contacts = append(contacts, c)
 		}
 	}

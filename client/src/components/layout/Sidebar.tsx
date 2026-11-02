@@ -1,9 +1,9 @@
-import { LayoutDashboard, Phone, Smartphone, Users, LogOut, BarChart3, PhoneCall, BookUser, Megaphone } from "lucide-react";
+import { LayoutDashboard, Phone, Smartphone, Users, LogOut, BarChart3, PhoneCall, BookUser, Megaphone, Bot, Code2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
-export type Tab = "dashboard" | "calls" | "reports" | "accounts" | "contacts" | "campaigns" | "users";
+export type Tab = "dashboard" | "calls" | "reports" | "accounts" | "ai-agent" | "contacts" | "campaigns" | "users" | "api-docs";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -19,10 +19,12 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
   const tabs = [
     { id: "dashboard" as Tab, label: "Dashboard", icon: <LayoutDashboard className="h-5 w-5 shrink-0" /> },
     { id: "calls" as Tab, label: "Chamadas Ao Vivo", icon: <Phone className="h-5 w-5 shrink-0" /> },
+    { id: "ai-agent" as Tab, label: "Agente de IA", icon: <Bot className="h-5 w-5 shrink-0" /> },
     { id: "contacts" as Tab, label: "Contatos (CRM)", icon: <BookUser className="h-5 w-5 shrink-0" /> },
     { id: "campaigns" as Tab, label: "Campanhas", icon: <Megaphone className="h-5 w-5 shrink-0" /> },
     { id: "reports" as Tab, label: "Relatórios", icon: <BarChart3 className="h-5 w-5 shrink-0" /> },
     { id: "accounts" as Tab, label: "Contas WhatsApp", icon: <Smartphone className="h-5 w-5 shrink-0" /> },
+    { id: "api-docs" as Tab, label: "API & Integrações", icon: <Code2 className="h-5 w-5 shrink-0" /> },
     ...(isAdmin ? [{ id: "users" as Tab, label: "Usuários", icon: <Users className="h-5 w-5 shrink-0" /> }] : []),
   ];
 
@@ -82,12 +84,32 @@ export const Sidebar = ({ activeTab, onNavigate, collapsed = false }: SidebarPro
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
+          title={collapsed ? "Página de Apresentação" : undefined}
+          className={cn(
+            "text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10 rounded-xl transition-colors h-9",
+            collapsed ? "w-9 mx-auto justify-center" : "w-full justify-start gap-3 text-xs"
+          )}
+          onClick={() => {
+            window.open("/landing", "_blank");
+          }}
+        >
+          <ExternalLink className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>Página de Vendas</span>}
+        </Button>
+
+        <Button
+          variant="ghost"
+          size={collapsed ? "icon" : "default"}
           title={collapsed ? "Sair do Sistema" : undefined}
           className={cn(
             "text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors h-9",
             collapsed ? "w-9 mx-auto justify-center" : "w-full justify-start gap-3 text-xs"
           )}
-          onClick={logout}
+          onClick={() => {
+            logout();
+            window.history.pushState({}, "", "/login");
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
         >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Sair do Sistema</span>}

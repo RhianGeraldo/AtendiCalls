@@ -28,13 +28,21 @@ const PAGE_TITLES: Record<Tab, { title: string; subtitle: string }> = {
     title: "Campanhas de Ligações Sequenciais",
     subtitle: "Crie disparos automatizados de voz com delay configurável e Playbook do Vendedor.",
   },
+  "ai-agent": {
+    title: "Agentes de IA de Voz",
+    subtitle: "Crie múltiplos agentes virtuais, defina scripts e vincule cada um às instâncias de WhatsApp desejadas.",
+  },
   accounts: {
     title: "Contas WhatsApp",
     subtitle: "Gerencie instâncias conectadas e pareamento via QR Code.",
   },
+  "api-docs": {
+    title: "API Externa & Motor Headless",
+    subtitle: "Documentação completa do motor headless, tokens de instâncias e exemplos prontos.",
+  },
   users: {
-    title: "Gestão de Usuários",
-    subtitle: "Administre usuários e permissões do sistema.",
+    title: "Gestão de Clientes & Planos",
+    subtitle: "Gerencie o acesso dos clientes, limites de instâncias WhatsApp e planos de assinatura.",
   },
 };
 
