@@ -1,6 +1,6 @@
 # 🚀 Guia de Deploy do AtendiCalls no aaPanel (OpenLiteSpeed & Nginx)
 
-Este guia orienta a instalação e execução em produção do **AtendiCalls** dentro do painel **aaPanel**, com foco no servidor web **OpenLiteSpeed (OLS)**, banco de dados (MySQL/PostgreSQL), gerenciamento de processos via **Supervisor** e configuração de **SSL / WebSockets / Server-Sent Events (SSE)** (necessário para áudio em tempo real, WebRTC e pareamento de QR Code).
+Este guia orienta a instalação e execução em produção do **AtendiCalls** dentro do painel **aaPanel**, com foco no servidor web **OpenLiteSpeed (OLS)** (e Nginx como alternativa), banco de dados (MySQL/PostgreSQL), gerenciamento de processos via **Supervisor** e configuração de **SSL / WebSockets** (necessário para áudio em tempo real e WebRTC).
 
 ---
 
@@ -8,9 +8,9 @@ Este guia orienta a instalação e execução em produção do **AtendiCalls** d
 
 ```
 [ Navegador / Cliente ] 
-        │ (HTTPS / WSS / SSE - Porta 443)
+        │ (HTTPS / WSS - Porta 443)
         ▼
-[ OpenLiteSpeed ] ── (Proxy Reverso HTTP / SSE / WS)
+[ OpenLiteSpeed / Nginx ] ── (Proxy Reverso com WebSocket)
         │ 
         ▼ (Porta interna 127.0.0.1:8080)
 [ AtendiCalls (Go Server) ] ── (GORM) ──► [ MySQL / PostgreSQL ]
@@ -22,31 +22,17 @@ Este guia orienta a instalação e execução em produção do **AtendiCalls** d
 ## 📋 2. Pré-requisitos no aaPanel
 
 No menu lateral **App Store** do aaPanel, garanta que estejam instalados:
-1. **OpenLiteSpeed** (seu servidor web ativo — **não precisa desinstalar** para colocar Nginx!).
+1. **OpenLiteSpeed** (seu servidor web ativo).
 2. **MySQL** (versão 5.7 ou 8.0) *ou* **PostgreSQL Manager**.
 3. **Supervisor** (em *App Store* > procure por "Supervisor" e instale — essencial para manter o processo Go rodando 24/7).
 4. **Node.js** (versão 18 ou superior) e **Go** (versão 1.23 ou superior) no terminal do servidor.
 
-### Instalando ou Atualizando o Go Oficial no Servidor:
-Se o comando `go version` no servidor mostrar uma versão antiga (ex: Go 1.18, 1.20 ou der erro de formato no `go.mod`), instale a versão oficial recente com:
-
+Para verificar se o Node e Go estão presentes no terminal do servidor:
 ```bash
-# 1. Baixar versão oficial recente
-wget https://go.dev/dl/go1.23.6.linux-amd64.tar.gz
-
-# 2. Descompactar no sistema
-rm -rf /usr/local/go
-tar -C /usr/local -xzf go1.23.6.linux-amd64.tar.gz
-rm go1.23.6.linux-amd64.tar.gz
-
-# 3. Adicionar ao PATH
-export PATH=/usr/local/go/bin:$PATH
-echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-
-# Testar
+node -v
 go version
 ```
+*(Se faltar Go no seu servidor Linux: `apt update && apt install -y golang` ou baixe do site oficial go.dev)*.
 
 ---
 
@@ -86,11 +72,8 @@ Cole a configuração:
 # Porta local onde o binário Go vai escutar
 PORT=8080
 
-# String de Conexão GORM para MySQL:
-DATABASE_URL=atendicalls_user:SUA_SENHA_AQUI@tcp(127.0.0.1:3306)/atendicalls_db?charset=utf8mb4&parseTime=True&loc=Local
-
 # Caso opte por PostgreSQL em vez de MySQL:
-# DATABASE_URL=postgres://usuario:senha@127.0.0.1:5432/atendicalls_db?sslmode=disable
+# DATABASE_URL=postgres://atendicalls_user:Erriesse2026!@127.0.0.1:5432/atendicalls_db?sslmode=disable
 
 # Chaves de IA (Preencha as que for utilizar):
 GEMINI_API_KEY=
@@ -132,10 +115,6 @@ chmod +x server
    - **Number of processes:** `1`
 3. Salve. O status deve ficar verde (**RUNNING**).
 4. Verifique o log do daemon no Supervisor para confirmar que o servidor iniciou e escuta na `:8080`.
-5. Você pode testar se a API já responde localmente:
-   ```bash
-   curl -I http://127.0.0.1:8080/api/plans
-   ```
 
 ---
 
@@ -153,16 +132,16 @@ chmod +x server
 2. Selecione **Let's Encrypt**, marque seu domínio e clique em **Apply**.
 3. Ative a chave **Force HTTPS**.
 
-### 8.3. Configurar o Proxy Reverso no OpenLiteSpeed
+### 8.3. Configurar o Proxy Reverso e WebSockets no OpenLiteSpeed
 
-1. No aaPanel, clique no seu site > aba **Config file**.
-2. Ao final do arquivo de configuração do vHost, adicione o bloco abaixo:
+O OpenLiteSpeed gerencia proxies reversos via **External Application** e **Context** (ou Rewrite Rules).
+
+#### Método Recomendado (Via Configuração do vHost do OpenLiteSpeed):
+1. No aaPanel, clique no seu site > aba **Config file** (ou abra o arquivo de configuração vhost do OpenLiteSpeed).
+2. Adicione o processador externo de proxy e as diretivas de WebSocket dentro do bloco `virtualhost`:
 
 ```text
-# ==========================================
-# CONFIGURAÇÃO DO ATENDICALLS (GO + SSE + WEBSOCKETS)
-# ==========================================
-
+# 1. Definir o backend Go como External Processor
 extprocessor atendicalls_backend {
   type                    proxy
   address                 127.0.0.1:8080
@@ -173,22 +152,19 @@ extprocessor atendicalls_backend {
   respURI                 /
 }
 
-# 1. Repasse explícito de todas as chamadas de API e eventos SSE (/api/events)
-context /api {
-  type                    proxy
-  handler                 atendicalls_backend
-  addDefaultCharset       off
-}
-
-# 2. Repasse da raiz do painel web para o Go
+# 2. Definir o Contexto raiz para encaminhar todo o tráfego
 context / {
   type                    proxy
   handler                 atendicalls_backend
   addDefaultCharset       off
 }
 
-# 3. WebSockets (áudio e bots de voz)
+# 3. Mapear WebSockets para áudio, chamadas e eventos em tempo real
 websocket /ws {
+  address                 127.0.0.1:8080
+}
+
+websocket /api/events {
   address                 127.0.0.1:8080
 }
 
@@ -197,13 +173,8 @@ websocket /api/ai/live/ws {
 }
 ```
 
-> **IMPORTANTE SOBRE `/api/events`:** Não adicione `websocket /api/events`. O endpoint `/api/events` é **Server-Sent Events (SSE / HTTP GET)**. Mapeá-lo como WebSocket causa erro 404 no OpenLiteSpeed. O `context /api` já cuida perfeitamente da transmissão do QR Code e eventos em tempo real!
-
-3. Salve o arquivo no painel.
-4. **Reinicie o OpenLiteSpeed pelo terminal** (garante que todos os processos recarreguem os novos contextos):
-   ```bash
-   /usr/local/lsws/bin/lswsctrl restart
-   ```
+3. Salve as alterações.
+4. Reinicie o OpenLiteSpeed no aaPanel (**App Store** > **OpenLiteSpeed** > **Restart**).
 
 ---
 
@@ -215,7 +186,7 @@ websocket /api/ai/live/ws {
    - **E-mail:** `admin@admin.com`
    - **Senha:** `admin123`
 4. Acesse o menu de perfil para alterar a sua senha.
-5. Crie uma linha no menu **Contas WhatsApp** e clique em **"Escanear QR"**: o código abrirá em um popup centralizado e conectará instantaneamente!
+5. Crie ou conecte uma nova linha de WhatsApp via QR Code!
 
 ---
 
@@ -228,7 +199,7 @@ cd /www/wwwroot/atendicalls
 git pull origin main
 
 # Recompilar Frontend
-cd client && npm run build && cd ..
+cd client && npm install && npm run build && cd ..
 
 # Recompilar Backend
 go build -o server ./cmd/server

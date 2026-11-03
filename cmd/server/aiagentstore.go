@@ -29,8 +29,8 @@ type AIAgent struct {
 	CallWebhookURL        string    `gorm:"default:''" json:"callWebhookUrl"`
 	EnableHangup          bool      `gorm:"default:true" json:"enableHangup"`
 	HangupDelaySec        float64   `gorm:"default:1.5" json:"hangupDelaySec"`
-	EnableWhatsAppMessage bool      `gorm:"default:true" json:"enableWhatsAppMessage"`
-	WhatsAppMessageRules  string    `gorm:"type:text;default:''" json:"whatsappMessageRules"`
+	EnableWhatsAppMessage bool      `gorm:"column:enable_whats_app_message;default:true" json:"enableWhatsAppMessage"`
+	WhatsAppMessageRules  string    `gorm:"column:whats_app_message_rules;type:text;default:''" json:"whatsappMessageRules"`
 	IsActive              bool      `gorm:"default:true" json:"isActive"`
 	CreatedAt             time.Time `json:"createdAt"`
 	UpdatedAt             time.Time `json:"updatedAt"`
@@ -75,6 +75,14 @@ type aiAgentStore struct {
 func newAIAgentStore(ctx context.Context, db *gorm.DB) (*aiAgentStore, error) {
 	if err := db.WithContext(ctx).AutoMigrate(&AIAgent{}); err != nil {
 		return nil, fmt.Errorf("auto migrate ai_agents: %w", err)
+	}
+
+	// Rename legacy column if present in older SQLite schemas
+	if db.Migrator().HasColumn(&AIAgent{}, "enable_whatsapp_message") && !db.Migrator().HasColumn(&AIAgent{}, "enable_whats_app_message") {
+		_ = db.Migrator().RenameColumn(&AIAgent{}, "enable_whatsapp_message", "enable_whats_app_message")
+	}
+	if db.Migrator().HasColumn(&AIAgent{}, "whatsapp_message_rules") && !db.Migrator().HasColumn(&AIAgent{}, "whats_app_message_rules") {
+		_ = db.Migrator().RenameColumn(&AIAgent{}, "whatsapp_message_rules", "whats_app_message_rules")
 	}
 
 	store := &aiAgentStore{db: db}
@@ -162,23 +170,33 @@ func (s *aiAgentStore) UpdateAgent(ctx context.Context, a *AIAgent) error {
 	a.AssignedSessionsRaw = string(b)
 
 	updates := map[string]any{
-		"name":                    a.Name,
-		"description":             a.Description,
-		"provider":                a.Provider,
-		"model":                   a.Model,
-		"voice":                   a.Voice,
-		"system_prompt":           a.SystemPrompt,
-		"first_message":           a.FirstMessage,
-		"auto_answer":             a.AutoAnswer,
-		"auto_answer_delay_sec":   a.AutoAnswerDelaySec,
-		"assigned_sessions":       a.AssignedSessionsRaw,
-		"call_webhook_url":        a.CallWebhookURL,
-		"enable_hangup":           a.EnableHangup,
-		"hangup_delay_sec":        a.HangupDelaySec,
-		"enable_whatsapp_message": a.EnableWhatsAppMessage,
-		"whatsapp_message_rules":  a.WhatsAppMessageRules,
-		"is_active":               a.IsActive,
-		"updated_at":              a.UpdatedAt,
+		"name":                  a.Name,
+		"description":           a.Description,
+		"provider":              a.Provider,
+		"model":                 a.Model,
+		"voice":                 a.Voice,
+		"system_prompt":         a.SystemPrompt,
+		"first_message":         a.FirstMessage,
+		"auto_answer":           a.AutoAnswer,
+		"auto_answer_delay_sec": a.AutoAnswerDelaySec,
+		"assigned_sessions":     a.AssignedSessionsRaw,
+		"call_webhook_url":      a.CallWebhookURL,
+		"enable_hangup":         a.EnableHangup,
+		"hangup_delay_sec":      a.HangupDelaySec,
+		"is_active":             a.IsActive,
+		"updated_at":            a.UpdatedAt,
+	}
+
+	if s.db.Migrator().HasColumn(&AIAgent{}, "enable_whats_app_message") {
+		updates["enable_whats_app_message"] = a.EnableWhatsAppMessage
+	} else {
+		updates["enable_whatsapp_message"] = a.EnableWhatsAppMessage
+	}
+
+	if s.db.Migrator().HasColumn(&AIAgent{}, "whats_app_message_rules") {
+		updates["whats_app_message_rules"] = a.WhatsAppMessageRules
+	} else {
+		updates["whatsapp_message_rules"] = a.WhatsAppMessageRules
 	}
 
 	return s.db.WithContext(ctx).Model(&AIAgent{}).Where("id = ?", a.ID).Updates(updates).Error
