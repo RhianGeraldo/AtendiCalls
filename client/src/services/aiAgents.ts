@@ -1,5 +1,4 @@
-import { apiGet, apiPost } from "@/lib/api";
-import { getClientId } from "@/lib/client-id";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 export interface AIAgent {
   id: string;
@@ -37,30 +36,9 @@ export const createAIAgent = (agent: Partial<AIAgent>): Promise<AIAgent> => {
 };
 
 export const updateAIAgent = async (id: string, agent: Partial<AIAgent>): Promise<AIAgent> => {
-  const r = await fetch(`/api/ai/agents/${id}`, {
-    method: "PUT",
-    headers: {
-      "X-Client-Id": getClientId(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(agent),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.error || `Falha ao atualizar agente: ${r.status}`);
-  }
-  return r.json();
+  return apiPut<AIAgent>(`/api/ai/agents/${id}`, agent);
 };
 
 export const deleteAIAgent = async (id: string): Promise<void> => {
-  const r = await fetch(`/api/ai/agents/${id}`, {
-    method: "DELETE",
-    headers: {
-      "X-Client-Id": getClientId(),
-    },
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.error || `Falha ao excluir agente: ${r.status}`);
-  }
+  return apiDelete(`/api/ai/agents/${id}`);
 };

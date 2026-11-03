@@ -1,5 +1,4 @@
-import { apiGet, apiPost, apiDelete } from "@/lib/api";
-import { getClientId } from "@/lib/client-id";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 import type { SessionInfo } from "@/types/session";
 
 export const listSessions = () =>
@@ -11,12 +10,7 @@ export const createSession = (name: string, token?: string) =>
 export const deleteSession = (id: string) => apiDelete(`/api/sessions/${id}`);
 
 const postVoid = async (path: string): Promise<void> => {
-  const r = await fetch(path, {
-    method: "POST",
-    headers: { "X-Client-Id": getClientId(), "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!r.ok) throw new Error(`${path} ${r.status}`);
+  await apiPost(path, {});
 };
 
 export const logoutSession = (id: string) => postVoid(`/api/sessions/${id}/logout`);
@@ -24,10 +18,5 @@ export const logoutSession = (id: string) => postVoid(`/api/sessions/${id}/logou
 export const pairSession = (id: string) => postVoid(`/api/sessions/${id}/pair`);
 
 export const renameSession = async (id: string, name: string): Promise<void> => {
-  const r = await fetch(`/api/sessions/${id}`, {
-    method: "PATCH",
-    headers: { "X-Client-Id": getClientId(), "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-  if (!r.ok) throw new Error(`Falha ao renomear sessão: ${r.status}`);
+  await apiPatch(`/api/sessions/${id}`, { name });
 };

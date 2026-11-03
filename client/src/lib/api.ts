@@ -33,7 +33,46 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
   }
   if (!r.ok) {
     const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    let errMsg = `${path} ${r.status}`;
+    try {
+      const errObj = JSON.parse(text);
+      if (errObj.error) errMsg = errObj.error;
+    } catch {}
+    throw new Error(errMsg);
+  }
+  return r.json() as Promise<T>;
+};
+
+export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {
+  const r = await fetch(path, { method: "PUT", headers: baseHeaders(), body: JSON.stringify(body) });
+  if (r.status === 401) {
+    useAuth.getState().logout();
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let errMsg = `${path} ${r.status}`;
+    try {
+      const errObj = JSON.parse(text);
+      if (errObj.error) errMsg = errObj.error;
+    } catch {}
+    throw new Error(errMsg);
+  }
+  return r.json() as Promise<T>;
+};
+
+export const apiPatch = async <T>(path: string, body: unknown): Promise<T> => {
+  const r = await fetch(path, { method: "PATCH", headers: baseHeaders(), body: JSON.stringify(body) });
+  if (r.status === 401) {
+    useAuth.getState().logout();
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let errMsg = `${path} ${r.status}`;
+    try {
+      const errObj = JSON.parse(text);
+      if (errObj.error) errMsg = errObj.error;
+    } catch {}
+    throw new Error(errMsg);
   }
   return r.json() as Promise<T>;
 };
@@ -43,5 +82,13 @@ export const apiDelete = async (path: string): Promise<void> => {
   if (r.status === 401) {
     useAuth.getState().logout();
   }
-  if (!r.ok) throw new Error(`${path} ${r.status}`);
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let errMsg = `${path} ${r.status}`;
+    try {
+      const errObj = JSON.parse(text);
+      if (errObj.error) errMsg = errObj.error;
+    } catch {}
+    throw new Error(errMsg);
+  }
 };
