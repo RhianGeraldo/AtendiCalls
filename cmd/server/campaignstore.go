@@ -74,14 +74,20 @@ type campaignStore struct {
 }
 
 func newCampaignStore(ctx context.Context, db *gorm.DB) (*campaignStore, error) {
-	if !db.Migrator().HasTable(&Campaign{}) {
-		if err := db.WithContext(ctx).AutoMigrate(&Campaign{}); err != nil {
+	if db.Dialector.Name() != "sqlite" {
+		if err := db.WithContext(ctx).AutoMigrate(&Campaign{}, &CampaignItem{}); err != nil {
 			return nil, fmt.Errorf("auto migrate campaigns: %w", err)
 		}
-	}
-	if !db.Migrator().HasTable(&CampaignItem{}) {
-		if err := db.WithContext(ctx).AutoMigrate(&CampaignItem{}); err != nil {
-			return nil, fmt.Errorf("auto migrate campaign_items: %w", err)
+	} else {
+		if !db.Migrator().HasTable(&Campaign{}) {
+			if err := db.WithContext(ctx).AutoMigrate(&Campaign{}); err != nil {
+				return nil, fmt.Errorf("auto migrate campaigns: %w", err)
+			}
+		}
+		if !db.Migrator().HasTable(&CampaignItem{}) {
+			if err := db.WithContext(ctx).AutoMigrate(&CampaignItem{}); err != nil {
+				return nil, fmt.Errorf("auto migrate campaign_items: %w", err)
+			}
 		}
 	}
 	return &campaignStore{db: db}, nil

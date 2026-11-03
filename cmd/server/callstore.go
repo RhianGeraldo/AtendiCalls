@@ -147,8 +147,16 @@ func (cs *callStore) SaveCall(ctx context.Context, rec CallRecord) error {
 	if rec.EndReason != "" {
 		updates["end_reason"] = rec.EndReason
 	}
-	if rec.ConnectedAt != nil && rec.EndedAt != nil && *rec.EndedAt > *rec.ConnectedAt {
-		updates["duration_seconds"] = int((*rec.EndedAt - *rec.ConnectedAt) / 1000)
+	connAt := rec.ConnectedAt
+	if connAt == nil {
+		connAt = existing.ConnectedAt
+	}
+	endAt := rec.EndedAt
+	if endAt == nil {
+		endAt = existing.EndedAt
+	}
+	if connAt != nil && endAt != nil && *endAt > *connAt {
+		updates["duration_seconds"] = int((*endAt - *connAt) / 1000)
 	}
 
 	return cs.db.WithContext(ctx).Model(&CallRecord{}).Where("id = ?", rec.CallID).Updates(updates).Error
