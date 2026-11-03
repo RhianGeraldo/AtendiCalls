@@ -97,6 +97,19 @@ export const AccountsPage = () => {
   // Delete Confirmation
   const [toDelete, setToDelete] = useState<SessionInfo | null>(null);
 
+  // Pairing QR Modal
+  const [pairingSession, setPairingSession] = useState<SessionInfo | null>(null);
+
+  useEffect(() => {
+    if (pairingSession) {
+      const current = sessions.find((s) => s.id === pairingSession.id);
+      if (current?.paired) {
+        toast.success(`WhatsApp "${current.name}" conectado com sucesso!`);
+        setPairingSession(null);
+      }
+    }
+  }, [sessions, pairingSession]);
+
   const maxInst = user?.maxInstances || (isAdmin ? 9999 : 1);
   const curInst = sessions.length;
 
@@ -171,7 +184,6 @@ export const AccountsPage = () => {
     }
   };
 
-  const selectedSession = sessions.find((s) => s.id === activeId) || sessions[0];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 select-none">
@@ -561,9 +573,11 @@ export const AccountsPage = () => {
                     disabled={isBusy}
                     onClick={(e) => {
                       e.stopPropagation();
+                      setActiveSession(s.id);
+                      setPairingSession(s);
                       handleAction(s.id, () => pairSession(s.id));
                     }}
-                    className="text-xs gap-1.5 h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    className="text-xs gap-1.5 h-8 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                   >
                     {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
                     Escanear QR
@@ -590,17 +604,25 @@ export const AccountsPage = () => {
         })}
       </div>
 
-      {/* QR Code Scanner Section for Selected Unpaired Session */}
-      {selectedSession && !selectedSession.paired && (
-        <div className="rounded-2xl border bg-card p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b pb-3">
-            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-              <QrCode className="h-5 w-5 text-emerald-600" /> Escanear QR Code para "{selectedSession.name}"
-            </h2>
-          </div>
-          <SessionPairing session={selectedSession} />
-        </div>
-      )}
+      {/* Modal / Popup de Pareamento com QR Code */}
+      <Dialog open={!!pairingSession} onOpenChange={(open) => !open && setPairingSession(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5 text-emerald-600" />
+              Escanear QR Code — {pairingSession?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {pairingSession && (
+            <SessionPairing session={sessions.find((s) => s.id === pairingSession.id) || pairingSession} />
+          )}
+          <DialogFooter className="sm:justify-end">
+            <Button variant="outline" onClick={() => setPairingSession(null)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Criar Nova Sessão */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
