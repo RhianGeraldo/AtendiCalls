@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,75 +9,79 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type AIAgent struct {
-	ID                    string    `json:"id"`
-	UserID                string    `json:"userId,omitempty"`
-	Name                  string    `json:"name"`
-	Description           string    `json:"description"`
-	Provider              string    `json:"provider"` // "openrouter", "openai_realtime", "gemini_live"
-	Model                 string    `json:"model"`
-	Voice                 string    `json:"voice"`
-	SystemPrompt          string    `json:"systemPrompt"`
-	FirstMessage          string    `json:"firstMessage"`
-	AutoAnswer            bool      `json:"autoAnswer"`
-	AutoAnswerDelaySec    int       `json:"autoAnswerDelaySec"`
-	AssignedSessions      []string  `json:"assignedSessions"` // e.g. ["all"] or ["sess_1", "sess_2"]
-	CallWebhookURL        string    `json:"callWebhookUrl"`
-	EnableHangup          bool      `json:"enableHangup"`
-	HangupDelaySec        float64   `json:"hangupDelaySec"`
-	EnableWhatsAppMessage bool      `json:"enableWhatsAppMessage"`
-	WhatsAppMessageRules  string    `json:"whatsappMessageRules"`
-	IsActive              bool      `json:"isActive"`
+	ID                    string    `gorm:"primaryKey" json:"id"`
+	UserID                string    `gorm:"index;default:''" json:"userId,omitempty"`
+	Name                  string    `gorm:"not null" json:"name"`
+	Description           string    `gorm:"type:text;default:''" json:"description"`
+	Provider              string    `gorm:"not null" json:"provider"` // "openrouter", "openai_realtime", "gemini_live"
+	Model                 string    `gorm:"not null" json:"model"`
+	Voice                 string    `gorm:"not null" json:"voice"`
+	SystemPrompt          string    `gorm:"type:text;not null" json:"systemPrompt"`
+	FirstMessage          string    `gorm:"type:text;not null" json:"firstMessage"`
+	AutoAnswer            bool      `gorm:"default:true" json:"autoAnswer"`
+	AutoAnswerDelaySec    int       `gorm:"default:1" json:"autoAnswerDelaySec"`
+	AssignedSessions      []string  `gorm:"-" json:"assignedSessions"`
+	AssignedSessionsRaw   string    `gorm:"column:assigned_sessions;type:text" json:"-"`
+	CallWebhookURL        string    `gorm:"default:''" json:"callWebhookUrl"`
+	EnableHangup          bool      `gorm:"default:true" json:"enableHangup"`
+	HangupDelaySec        float64   `gorm:"default:1.5" json:"hangupDelaySec"`
+	EnableWhatsAppMessage bool      `gorm:"default:true" json:"enableWhatsAppMessage"`
+	WhatsAppMessageRules  string    `gorm:"type:text;default:''" json:"whatsappMessageRules"`
+	IsActive              bool      `gorm:"default:true" json:"isActive"`
 	CreatedAt             time.Time `json:"createdAt"`
 	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
+func (AIAgent) TableName() string {
+	return "ai_agents"
+}
+
+func (a *AIAgent) BeforeSave(tx *gorm.DB) error {
+	if a.AssignedSessions == nil {
+		a.AssignedSessions = []string{}
+	}
+	b, err := json.Marshal(a.AssignedSessions)
+	if err == nil {
+		a.AssignedSessionsRaw = string(b)
+	}
+	if a.HangupDelaySec <= 0 {
+		a.HangupDelaySec = 1.5
+	}
+	return nil
+}
+
+func (a *AIAgent) AfterFind(tx *gorm.DB) error {
+	if a.AssignedSessionsRaw != "" {
+		_ = json.Unmarshal([]byte(a.AssignedSessionsRaw), &a.AssignedSessions)
+	}
+	if a.AssignedSessions == nil {
+		a.AssignedSessions = []string{}
+	}
+	if a.HangupDelaySec <= 0 {
+		a.HangupDelaySec = 1.5
+	}
+	return nil
+}
+
 type aiAgentStore struct {
-	db *sql.DB
+	db *gorm.DB
 	mu sync.RWMutex
 }
 
-func newAIAgentStore(ctx context.Context, db *sql.DB) (*aiAgentStore, error) {
-	query := `CREATE TABLE IF NOT EXISTS ai_agents (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		description TEXT,
-		provider TEXT NOT NULL,
-		model TEXT NOT NULL,
-		voice TEXT NOT NULL,
-		system_prompt TEXT NOT NULL,
-		first_message TEXT NOT NULL,
-		auto_answer INTEGER NOT NULL DEFAULT 1,
-		auto_answer_delay_sec INTEGER NOT NULL DEFAULT 1,
-		assigned_sessions TEXT NOT NULL DEFAULT '["all"]',
-		call_webhook_url TEXT DEFAULT '',
-		enable_hangup INTEGER NOT NULL DEFAULT 1,
-		hangup_delay_sec REAL NOT NULL DEFAULT 1.5,
-		enable_whatsapp_message INTEGER NOT NULL DEFAULT 1,
-		whatsapp_message_rules TEXT DEFAULT '',
-		is_active INTEGER NOT NULL DEFAULT 1,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);`
-
-	if _, err := db.ExecContext(ctx, query); err != nil {
-		return nil, fmt.Errorf("failed to create ai_agents table: %w", err)
+func newAIAgentStore(ctx context.Context, db *gorm.DB) (*aiAgentStore, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&AIAgent{}); err != nil {
+		return nil, fmt.Errorf("auto migrate ai_agents: %w", err)
 	}
 
-	// Migrations for existing tables
-	_, _ = db.ExecContext(ctx, `ALTER TABLE ai_agents ADD COLUMN user_id TEXT DEFAULT '';`)
-	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_ai_agents_user_id ON ai_agents(user_id);`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE ai_agents ADD COLUMN enable_hangup INTEGER NOT NULL DEFAULT 1;`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE ai_agents ADD COLUMN hangup_delay_sec REAL NOT NULL DEFAULT 1.5;`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE ai_agents ADD COLUMN enable_whatsapp_message INTEGER NOT NULL DEFAULT 1;`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE ai_agents ADD COLUMN whatsapp_message_rules TEXT DEFAULT '';`)
-
 	store := &aiAgentStore{db: db}
+
 	// Seed default agent if empty
-	var count int
-	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ai_agents`).Scan(&count)
+	var count int64
+	_ = db.WithContext(ctx).Model(&AIAgent{}).Count(&count).Error
 	if count == 0 {
 		defAgent := &AIAgent{
 			ID:                    "agent_comercial_padrao",
@@ -111,74 +114,13 @@ func (s *aiAgentStore) ListAgents(ctx context.Context, userID string) ([]*AIAgen
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var query string
-	var args []any
-	if userID != "" {
-		query = `
-			SELECT id, COALESCE(user_id, ''), name, description, provider, model, voice, system_prompt, first_message,
-			       auto_answer, auto_answer_delay_sec, assigned_sessions, call_webhook_url,
-			       enable_hangup, hangup_delay_sec, enable_whatsapp_message, whatsapp_message_rules,
-			       is_active, created_at, updated_at
-			FROM ai_agents
-			WHERE user_id = ? OR user_id = ''
-			ORDER BY created_at ASC
-		`
-		args = append(args, userID)
-	} else {
-		query = `
-			SELECT id, COALESCE(user_id, ''), name, description, provider, model, voice, system_prompt, first_message,
-			       auto_answer, auto_answer_delay_sec, assigned_sessions, call_webhook_url,
-			       enable_hangup, hangup_delay_sec, enable_whatsapp_message, whatsapp_message_rules,
-			       is_active, created_at, updated_at
-			FROM ai_agents
-			ORDER BY created_at ASC
-		`
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var agents []*AIAgent
-	for rows.Next() {
-		var a AIAgent
-		var sessionsJSON string
-		var autoAnswerInt, enableHangupInt, enableWAInt, isActiveInt int
-		var desc, webhook, waRules sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(
-			&a.ID, &a.UserID, &a.Name, &desc, &a.Provider, &a.Model, &a.Voice, &a.SystemPrompt, &a.FirstMessage,
-			&autoAnswerInt, &a.AutoAnswerDelaySec, &sessionsJSON, &webhook,
-			&enableHangupInt, &a.HangupDelaySec, &enableWAInt, &waRules,
-			&isActiveInt, &createdAt, &updatedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		a.Description = desc.String
-		a.CallWebhookURL = webhook.String
-		a.WhatsAppMessageRules = waRules.String
-		a.AutoAnswer = autoAnswerInt == 1
-		a.EnableHangup = enableHangupInt == 1
-		a.EnableWhatsAppMessage = enableWAInt == 1
-		if a.HangupDelaySec <= 0 {
-			a.HangupDelaySec = 1.5
-		}
-		a.IsActive = isActiveInt == 1
-		_ = json.Unmarshal([]byte(sessionsJSON), &a.AssignedSessions)
-		if a.AssignedSessions == nil {
-			a.AssignedSessions = []string{}
-		}
-
-		t, _ := time.Parse("2006-01-02 15:04:05", createdAt)
-		a.CreatedAt = t
-		tu, _ := time.Parse("2006-01-02 15:04:05", updatedAt)
-		a.UpdatedAt = tu
-
-		agents = append(agents, &a)
+	query := s.db.WithContext(ctx).Order("created_at asc")
+	if userID != "" {
+		query = query.Where("user_id = ? OR user_id = ''", userID)
+	}
+	if err := query.Find(&agents).Error; err != nil {
+		return nil, err
 	}
 	return agents, nil
 }
@@ -188,47 +130,9 @@ func (s *aiAgentStore) GetAgent(ctx context.Context, id string) (*AIAgent, error
 	defer s.mu.RUnlock()
 
 	var a AIAgent
-	var sessionsJSON string
-	var autoAnswerInt, enableHangupInt, enableWAInt, isActiveInt int
-	var desc, webhook, waRules sql.NullString
-	var createdAt, updatedAt string
-
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, COALESCE(user_id, ''), name, description, provider, model, voice, system_prompt, first_message,
-		       auto_answer, auto_answer_delay_sec, assigned_sessions, call_webhook_url,
-		       enable_hangup, hangup_delay_sec, enable_whatsapp_message, whatsapp_message_rules,
-		       is_active, created_at, updated_at
-		FROM ai_agents WHERE id = ?
-	`, id).Scan(
-		&a.ID, &a.UserID, &a.Name, &desc, &a.Provider, &a.Model, &a.Voice, &a.SystemPrompt, &a.FirstMessage,
-		&autoAnswerInt, &a.AutoAnswerDelaySec, &sessionsJSON, &webhook,
-		&enableHangupInt, &a.HangupDelaySec, &enableWAInt, &waRules,
-		&isActiveInt, &createdAt, &updatedAt,
-	)
-	if err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&a).Error; err != nil {
 		return nil, err
 	}
-
-	a.Description = desc.String
-	a.CallWebhookURL = webhook.String
-	a.WhatsAppMessageRules = waRules.String
-	a.AutoAnswer = autoAnswerInt == 1
-	a.EnableHangup = enableHangupInt == 1
-	a.EnableWhatsAppMessage = enableWAInt == 1
-	if a.HangupDelaySec <= 0 {
-		a.HangupDelaySec = 1.5
-	}
-	a.IsActive = isActiveInt == 1
-	_ = json.Unmarshal([]byte(sessionsJSON), &a.AssignedSessions)
-	if a.AssignedSessions == nil {
-		a.AssignedSessions = []string{}
-	}
-
-	t, _ := time.Parse("2006-01-02 15:04:05", createdAt)
-	a.CreatedAt = t
-	tu, _ := time.Parse("2006-01-02 15:04:05", updatedAt)
-	a.UpdatedAt = tu
-
 	return &a, nil
 }
 
@@ -239,101 +143,52 @@ func (s *aiAgentStore) CreateAgent(ctx context.Context, a *AIAgent) error {
 	if a.ID == "" {
 		a.ID = "agent_" + strings.ReplaceAll(uuid.New().String()[:8], "-", "")
 	}
-	if a.AssignedSessions == nil {
-		a.AssignedSessions = []string{}
-	}
-	sessionsBytes, _ := json.Marshal(a.AssignedSessions)
+	now := time.Now()
+	a.CreatedAt = now
+	a.UpdatedAt = now
 
-	autoAnswerInt := 0
-	if a.AutoAnswer {
-		autoAnswerInt = 1
-	}
-	enableHangupInt := 0
-	if a.EnableHangup {
-		enableHangupInt = 1
-	}
-	enableWAInt := 0
-	if a.EnableWhatsAppMessage {
-		enableWAInt = 1
-	}
-	if a.HangupDelaySec <= 0 {
-		a.HangupDelaySec = 1.5
-	}
-	isActiveInt := 0
-	if a.IsActive {
-		isActiveInt = 1
-	}
-
-	query := `
-		INSERT INTO ai_agents (
-			id, user_id, name, description, provider, model, voice, system_prompt, first_message,
-			auto_answer, auto_answer_delay_sec, assigned_sessions, call_webhook_url,
-			enable_hangup, hangup_delay_sec, enable_whatsapp_message, whatsapp_message_rules,
-			is_active, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`
-	_, err := s.db.ExecContext(ctx, query,
-		a.ID, a.UserID, a.Name, a.Description, a.Provider, a.Model, a.Voice, a.SystemPrompt, a.FirstMessage,
-		autoAnswerInt, a.AutoAnswerDelaySec, string(sessionsBytes), a.CallWebhookURL,
-		enableHangupInt, a.HangupDelaySec, enableWAInt, a.WhatsAppMessageRules,
-		isActiveInt,
-	)
-	return err
+	return s.db.WithContext(ctx).Create(a).Error
 }
 
 func (s *aiAgentStore) UpdateAgent(ctx context.Context, a *AIAgent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	a.UpdatedAt = time.Now()
 	if a.AssignedSessions == nil {
 		a.AssignedSessions = []string{}
 	}
-	sessionsBytes, _ := json.Marshal(a.AssignedSessions)
+	b, _ := json.Marshal(a.AssignedSessions)
+	a.AssignedSessionsRaw = string(b)
 
-	autoAnswerInt := 0
-	if a.AutoAnswer {
-		autoAnswerInt = 1
-	}
-	enableHangupInt := 0
-	if a.EnableHangup {
-		enableHangupInt = 1
-	}
-	enableWAInt := 0
-	if a.EnableWhatsAppMessage {
-		enableWAInt = 1
-	}
-	if a.HangupDelaySec <= 0 {
-		a.HangupDelaySec = 1.5
-	}
-	isActiveInt := 0
-	if a.IsActive {
-		isActiveInt = 1
+	updates := map[string]any{
+		"name":                    a.Name,
+		"description":             a.Description,
+		"provider":                a.Provider,
+		"model":                   a.Model,
+		"voice":                   a.Voice,
+		"system_prompt":           a.SystemPrompt,
+		"first_message":           a.FirstMessage,
+		"auto_answer":             a.AutoAnswer,
+		"auto_answer_delay_sec":   a.AutoAnswerDelaySec,
+		"assigned_sessions":       a.AssignedSessionsRaw,
+		"call_webhook_url":        a.CallWebhookURL,
+		"enable_hangup":           a.EnableHangup,
+		"hangup_delay_sec":        a.HangupDelaySec,
+		"enable_whatsapp_message": a.EnableWhatsAppMessage,
+		"whatsapp_message_rules":  a.WhatsAppMessageRules,
+		"is_active":               a.IsActive,
+		"updated_at":              a.UpdatedAt,
 	}
 
-	query := `
-		UPDATE ai_agents SET
-			name = ?, description = ?, provider = ?, model = ?, voice = ?,
-			system_prompt = ?, first_message = ?, auto_answer = ?,
-			auto_answer_delay_sec = ?, assigned_sessions = ?, call_webhook_url = ?,
-			enable_hangup = ?, hangup_delay_sec = ?, enable_whatsapp_message = ?, whatsapp_message_rules = ?,
-			is_active = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`
-	_, err := s.db.ExecContext(ctx, query,
-		a.Name, a.Description, a.Provider, a.Model, a.Voice,
-		a.SystemPrompt, a.FirstMessage, autoAnswerInt,
-		a.AutoAnswerDelaySec, string(sessionsBytes), a.CallWebhookURL,
-		enableHangupInt, a.HangupDelaySec, enableWAInt, a.WhatsAppMessageRules,
-		isActiveInt, a.ID,
-	)
-	return err
+	return s.db.WithContext(ctx).Model(&AIAgent{}).Where("id = ?", a.ID).Updates(updates).Error
 }
 
 func (s *aiAgentStore) DeleteAgent(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ai_agents WHERE id = ?`, id)
-	return err
+
+	return s.db.WithContext(ctx).Where("id = ?", id).Delete(&AIAgent{}).Error
 }
 
 // FindAgentForSession returns an active agent mapped specifically to sessionID,

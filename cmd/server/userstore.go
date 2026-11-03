@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type UserRole string
@@ -22,57 +23,44 @@ const (
 )
 
 type User struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	Email              string   `json:"email"`
-	PasswordHash       string   `json:"-"`
-	Role               UserRole `json:"role"`
-	PlanID             string   `json:"planId"`
-	PlanName           string   `json:"planName,omitempty"`
-	CustomMaxInstances int      `json:"customMaxInstances"`
-	MaxInstances       int      `json:"maxInstances"`
-	CurrentInstances   int      `json:"currentInstances"`
-	Status             string   `json:"status"`
-	TrialEndsAt        int64    `json:"trialEndsAt"`
-	CreatedAt          int64    `json:"createdAt"`
+	ID                 string   `gorm:"primaryKey" json:"id"`
+	Name               string   `gorm:"not null" json:"name"`
+	Email              string   `gorm:"uniqueIndex;not null" json:"email"`
+	PasswordHash       string   `gorm:"not null" json:"-"`
+	Role               UserRole `gorm:"default:'user'" json:"role"`
+	PlanID             string   `gorm:"default:'plan_free'" json:"planId"`
+	PlanName           string   `gorm:"-" json:"planName,omitempty"`
+	CustomMaxInstances int      `gorm:"default:0" json:"customMaxInstances"`
+	MaxInstances       int      `gorm:"-" json:"maxInstances"`
+	CurrentInstances   int      `gorm:"-" json:"currentInstances"`
+	Status             string   `gorm:"default:'active'" json:"status"`
+	TrialEndsAt        int64    `gorm:"default:0" json:"trialEndsAt"`
+	CreatedAt          int64    `gorm:"not null" json:"createdAt"`
+}
+
+func (User) TableName() string {
+	return "users"
+}
+
+type UserToken struct {
+	Token     string `gorm:"primaryKey" json:"token"`
+	UserID    string `gorm:"index;not null" json:"userId"`
+	CreatedAt int64  `gorm:"not null" json:"createdAt"`
+}
+
+func (UserToken) TableName() string {
+	return "user_tokens"
 }
 
 type userStore struct {
-	db     *sql.DB
+	db     *gorm.DB
 	mu     sync.RWMutex
 	tokens map[string]string // token -> userID
 }
 
-func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
-	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS users (
-		id                   TEXT PRIMARY KEY,
-		name                 TEXT NOT NULL,
-		email                TEXT UNIQUE NOT NULL,
-		password_hash        TEXT NOT NULL,
-		role                 TEXT NOT NULL DEFAULT 'user',
-		plan_id              TEXT DEFAULT 'plan_free',
-		custom_max_instances INTEGER DEFAULT 0,
-		status               TEXT NOT NULL DEFAULT 'active',
-		trial_ends_at        INTEGER DEFAULT 0,
-		created_at           INTEGER NOT NULL
-	)`)
-	if err != nil {
-		return nil, fmt.Errorf("create users table: %w", err)
-	}
-
-	// Migrations for existing tables: safely add missing columns if they don't exist
-	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN plan_id TEXT DEFAULT 'plan_free'`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN custom_max_instances INTEGER DEFAULT 0`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN trial_ends_at INTEGER DEFAULT 0`)
-
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS user_tokens (
-		token      TEXT PRIMARY KEY,
-		user_id    TEXT NOT NULL,
-		created_at INTEGER NOT NULL
-	)`)
-	if err != nil {
-		return nil, fmt.Errorf("create user_tokens table: %w", err)
+func newUserStore(ctx context.Context, db *gorm.DB) (*userStore, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&User{}, &UserToken{}); err != nil {
+		return nil, fmt.Errorf("auto migrate users: %w", err)
 	}
 
 	store := &userStore{
@@ -81,74 +69,80 @@ func newUserStore(ctx context.Context, db *sql.DB) (*userStore, error) {
 	}
 
 	// Load previously active tokens so user sessions persist across restarts
-	tokenRows, err := db.QueryContext(ctx, `SELECT token, user_id FROM user_tokens`)
-	if err == nil {
-		for tokenRows.Next() {
-			var tok, uid string
-			if err := tokenRows.Scan(&tok, &uid); err == nil {
-				store.tokens[tok] = uid
-			}
+	var activeTokens []UserToken
+	if err := db.WithContext(ctx).Find(&activeTokens).Error; err == nil {
+		for _, t := range activeTokens {
+			store.tokens[t.Token] = t.UserID
 		}
-		tokenRows.Close()
 	}
 
 	// Seed default Admin user if database has no users
-	var count int
-	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
-	if err == nil && count == 0 {
+	var count int64
+	if err := db.WithContext(ctx).Model(&User{}).Count(&count).Error; err == nil && count == 0 {
 		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		if err == nil {
 			id := newSessionID()
 			now := time.Now().UnixMilli()
-			_, _ = db.ExecContext(ctx, `INSERT INTO users (
-				id, name, email, password_hash, role, plan_id, custom_max_instances, status, trial_ends_at, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				id, "Administrador", "admin@admin.com", string(hash), string(RoleAdmin), "plan_pro", 10, "active", 0, now)
+			admin := User{
+				ID:                 id,
+				Name:               "Administrador",
+				Email:              "admin@admin.com",
+				PasswordHash:       string(hash),
+				Role:               RoleAdmin,
+				PlanID:             "plan_pro",
+				CustomMaxInstances: 10,
+				Status:             "active",
+				TrialEndsAt:        0,
+				CreatedAt:          now,
+			}
+			if err := db.WithContext(ctx).Create(&admin).Error; err != nil {
+				return nil, fmt.Errorf("seed admin: %w", err)
+			}
 		}
 	}
 
 	return store, nil
 }
 
+func (s *userStore) fillUserExtra(ctx context.Context, u *User) {
+	if u == nil {
+		return
+	}
+	var plan Plan
+	if err := s.db.WithContext(ctx).Where("id = ?", u.PlanID).First(&plan).Error; err == nil {
+		u.PlanName = plan.Name
+		if u.CustomMaxInstances > 0 {
+			u.MaxInstances = u.CustomMaxInstances
+		} else {
+			u.MaxInstances = plan.MaxInstances
+		}
+	} else {
+		u.PlanName = "Gratuito / Teste"
+		if u.CustomMaxInstances > 0 {
+			u.MaxInstances = u.CustomMaxInstances
+		} else {
+			u.MaxInstances = 1
+		}
+	}
+
+	var count int64
+	_ = s.db.WithContext(ctx).Model(&sessionRow{}).Where("user_id = ?", u.ID).Count(&count).Error
+	u.CurrentInstances = int(count)
+}
+
 func (s *userStore) listUsers(ctx context.Context) ([]User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT 
-		u.id, u.name, u.email, u.password_hash, u.role,
-		COALESCE(u.plan_id, 'plan_free'),
-		COALESCE(p.name, 'Gratuito / Teste'),
-		COALESCE(u.custom_max_instances, 0),
-		CASE WHEN COALESCE(u.custom_max_instances, 0) > 0 THEN u.custom_max_instances ELSE COALESCE(p.max_instances, 1) END,
-		(SELECT COUNT(*) FROM sessions WHERE user_id = u.id),
-		COALESCE(u.status, 'active'),
-		COALESCE(u.trial_ends_at, 0),
-		u.created_at
-	FROM users u
-	LEFT JOIN plans p ON u.plan_id = p.id
-	ORDER BY u.created_at ASC`
-
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
+	var users []User
+	if err := s.db.WithContext(ctx).Order("created_at asc").Find(&users).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var users []User
-	for rows.Next() {
-		var u User
-		var roleStr string
-		if err := rows.Scan(
-			&u.ID, &u.Name, &u.Email, &u.PasswordHash, &roleStr,
-			&u.PlanID, &u.PlanName, &u.CustomMaxInstances, &u.MaxInstances,
-			&u.CurrentInstances, &u.Status, &u.TrialEndsAt, &u.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		u.Role = UserRole(roleStr)
-		users = append(users, u)
+	for i := range users {
+		s.fillUserExtra(ctx, &users[i])
 	}
-	return users, rows.Err()
+	return users, nil
 }
 
 func (s *userStore) getUserByEmail(ctx context.Context, email string) (*User, error) {
@@ -156,34 +150,15 @@ func (s *userStore) getUserByEmail(ctx context.Context, email string) (*User, er
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT 
-		u.id, u.name, u.email, u.password_hash, u.role,
-		COALESCE(u.plan_id, 'plan_free'),
-		COALESCE(p.name, 'Gratuito / Teste'),
-		COALESCE(u.custom_max_instances, 0),
-		CASE WHEN COALESCE(u.custom_max_instances, 0) > 0 THEN u.custom_max_instances ELSE COALESCE(p.max_instances, 1) END,
-		(SELECT COUNT(*) FROM sessions WHERE user_id = u.id),
-		COALESCE(u.status, 'active'),
-		COALESCE(u.trial_ends_at, 0),
-		u.created_at
-	FROM users u
-	LEFT JOIN plans p ON u.plan_id = p.id
-	WHERE LOWER(u.email) = ?`
-
 	var u User
-	var roleStr string
-	err := s.db.QueryRowContext(ctx, query, email).Scan(
-		&u.ID, &u.Name, &u.Email, &u.PasswordHash, &roleStr,
-		&u.PlanID, &u.PlanName, &u.CustomMaxInstances, &u.MaxInstances,
-		&u.CurrentInstances, &u.Status, &u.TrialEndsAt, &u.CreatedAt,
-	)
+	err := s.db.WithContext(ctx).Where("LOWER(email) = ?", email).First(&u).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	u.Role = UserRole(roleStr)
+	s.fillUserExtra(ctx, &u)
 	return &u, nil
 }
 
@@ -191,34 +166,15 @@ func (s *userStore) getUserByID(ctx context.Context, id string) (*User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT 
-		u.id, u.name, u.email, u.password_hash, u.role,
-		COALESCE(u.plan_id, 'plan_free'),
-		COALESCE(p.name, 'Gratuito / Teste'),
-		COALESCE(u.custom_max_instances, 0),
-		CASE WHEN COALESCE(u.custom_max_instances, 0) > 0 THEN u.custom_max_instances ELSE COALESCE(p.max_instances, 1) END,
-		(SELECT COUNT(*) FROM sessions WHERE user_id = u.id),
-		COALESCE(u.status, 'active'),
-		COALESCE(u.trial_ends_at, 0),
-		u.created_at
-	FROM users u
-	LEFT JOIN plans p ON u.plan_id = p.id
-	WHERE u.id = ?`
-
 	var u User
-	var roleStr string
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&u.ID, &u.Name, &u.Email, &u.PasswordHash, &roleStr,
-		&u.PlanID, &u.PlanName, &u.CustomMaxInstances, &u.MaxInstances,
-		&u.CurrentInstances, &u.Status, &u.TrialEndsAt, &u.CreatedAt,
-	)
+	err := s.db.WithContext(ctx).Where("id = ?", id).First(&u).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	u.Role = UserRole(roleStr)
+	s.fillUserExtra(ctx, &u)
 	return &u, nil
 }
 
@@ -252,11 +208,20 @@ func (s *userStore) createUser(ctx context.Context, name, email, password string
 		trialEndsAt = now + int64(trialDays*24*60*60*1000)
 	}
 
-	_, err = s.db.ExecContext(ctx, `INSERT INTO users (
-		id, name, email, password_hash, role, plan_id, custom_max_instances, status, trial_ends_at, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, email, string(hash), string(role), planID, 0, "active", trialEndsAt, now)
-	if err != nil {
+	newUser := User{
+		ID:                 id,
+		Name:               name,
+		Email:              email,
+		PasswordHash:       string(hash),
+		Role:               role,
+		PlanID:             planID,
+		CustomMaxInstances: 0,
+		Status:             "active",
+		TrialEndsAt:        trialEndsAt,
+		CreatedAt:          now,
+	}
+
+	if err := s.db.WithContext(ctx).Create(&newUser).Error; err != nil {
 		return nil, err
 	}
 
@@ -269,54 +234,55 @@ func (s *userStore) updateUser(ctx context.Context, id, name, email, password st
 		return nil, errors.New("usuário não encontrado")
 	}
 
+	updates := map[string]any{}
 	if name != "" {
-		u.Name = strings.TrimSpace(name)
+		updates["name"] = strings.TrimSpace(name)
 	}
 	if email != "" {
-		u.Email = strings.ToLower(strings.TrimSpace(email))
+		updates["email"] = strings.ToLower(strings.TrimSpace(email))
 	}
 	if role != "" {
-		u.Role = role
+		updates["role"] = role
 	}
-
 	if password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			return nil, err
 		}
-		u.PasswordHash = string(hash)
+		updates["password_hash"] = string(hash)
 	}
 
-	_, err = s.db.ExecContext(ctx, `UPDATE users SET name = ?, email = ?, password_hash = ?, role = ? WHERE id = ?`,
-		u.Name, u.Email, u.PasswordHash, string(u.Role), id)
-	if err != nil {
-		return nil, err
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	return s.getUserByID(ctx, id)
 }
 
 func (s *userStore) updateUserPlan(ctx context.Context, id, planID string, customMaxInstances int) (*User, error) {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET plan_id = ?, custom_max_instances = ? WHERE id = ?`,
-		planID, customMaxInstances, id)
-	if err != nil {
+	updates := map[string]any{
+		"plan_id":              planID,
+		"custom_max_instances": customMaxInstances,
+	}
+	if err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.getUserByID(ctx, id)
 }
 
 func (s *userStore) updateUserStatus(ctx context.Context, id, status string) (*User, error) {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET status = ? WHERE id = ?`, status, id)
-	if err != nil {
+	if err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("status", status).Error; err != nil {
 		return nil, err
 	}
 	return s.getUserByID(ctx, id)
 }
 
 func (s *userStore) countUserSessions(ctx context.Context, userID string) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, userID).Scan(&count)
-	return count, err
+	var count int64
+	err := s.db.WithContext(ctx).Model(&sessionRow{}).Where("user_id = ?", userID).Count(&count).Error
+	return int(count), err
 }
 
 func (s *userStore) deleteUser(ctx context.Context, id string) error {
@@ -328,14 +294,13 @@ func (s *userStore) deleteUser(ctx context.Context, id string) error {
 	}
 	s.mu.Unlock()
 
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM user_tokens WHERE user_id = ?`, id)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
-	return err
+	_ = s.db.WithContext(ctx).Where("user_id = ?", id).Delete(&UserToken{}).Error
+	return s.db.WithContext(ctx).Where("id = ?", id).Delete(&User{}).Error
 }
 
 func (s *userStore) createToken(ctx context.Context, userID string) string {
 	b := make([]byte, 24)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	tok := hex.EncodeToString(b)
 	now := time.Now().UnixMilli()
 
@@ -343,10 +308,16 @@ func (s *userStore) createToken(ctx context.Context, userID string) string {
 	s.tokens[tok] = userID
 	s.mu.Unlock()
 
+	userTok := UserToken{
+		Token:     tok,
+		UserID:    userID,
+		CreatedAt: now,
+	}
+
 	if ctx != nil {
-		_, _ = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, userID, now)
+		_ = s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&userTok).Error
 	} else {
-		_, _ = s.db.Exec(`INSERT OR REPLACE INTO user_tokens (token, user_id, created_at) VALUES (?, ?, ?)`, tok, userID, now)
+		_ = s.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&userTok).Error
 	}
 
 	return tok
@@ -361,9 +332,9 @@ func (s *userStore) revokeToken(ctx context.Context, tok string) {
 	s.mu.Unlock()
 
 	if ctx != nil {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM user_tokens WHERE token = ?`, tok)
+		_ = s.db.WithContext(ctx).Where("token = ?", tok).Delete(&UserToken{}).Error
 	} else {
-		_, _ = s.db.Exec(`DELETE FROM user_tokens WHERE token = ?`, tok)
+		_ = s.db.Where("token = ?", tok).Delete(&UserToken{}).Error
 	}
 }
 

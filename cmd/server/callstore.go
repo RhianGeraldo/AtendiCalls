@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 type CallFilter struct {
@@ -72,152 +74,125 @@ type CallAnalyticsResponse struct {
 }
 
 type callStore struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db      *gorm.DB
+	dialect string
+	mu      sync.RWMutex
 }
 
-func newCallStore(ctx context.Context, db *sql.DB) (*callStore, error) {
-	query := `CREATE TABLE IF NOT EXISTS call_records (
-		id TEXT PRIMARY KEY,
-		session_id TEXT NOT NULL,
-		session_name TEXT DEFAULT '',
-		session_phone TEXT DEFAULT '',
-		session_picture_url TEXT DEFAULT '',
-		direction TEXT NOT NULL,
-		peer TEXT NOT NULL,
-		peer_name TEXT DEFAULT '',
-		picture_url TEXT DEFAULT '',
-		owner TEXT DEFAULT '',
-		status TEXT NOT NULL,
-		started_at INTEGER NOT NULL,
-		connected_at INTEGER,
-		ended_at INTEGER,
-		duration_seconds INTEGER DEFAULT 0,
-		end_reason TEXT DEFAULT ''
-	);
-	CREATE INDEX IF NOT EXISTS idx_call_records_session ON call_records(session_id);
-	CREATE INDEX IF NOT EXISTS idx_call_records_owner ON call_records(owner);
-	CREATE INDEX IF NOT EXISTS idx_call_records_started ON call_records(started_at);
-	`
-	_, err := db.ExecContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create call_records table: %w", err)
+func newCallStore(ctx context.Context, db *gorm.DB, dialect string) (*callStore, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&CallRecord{}); err != nil {
+		return nil, fmt.Errorf("auto migrate call_records: %w", err)
 	}
-
-	// Auto-migrations for new columns
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN user_id TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_name TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_phone TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN session_picture_url TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN recording_path TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_json TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcript_summary TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_records ADD COLUMN transcription_status TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_call_records_user ON call_records(user_id)`)
-	_, _ = db.ExecContext(ctx, `UPDATE call_records SET user_id = (SELECT user_id FROM sessions WHERE sessions.id = call_records.session_id) WHERE (user_id = '' OR user_id IS NULL) AND EXISTS (SELECT 1 FROM sessions WHERE sessions.id = call_records.session_id)`)
-
-	return &callStore{db: db}, nil
+	return &callStore{
+		db:      db,
+		dialect: dialect,
+	}, nil
 }
 
-func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
+func (cs *callStore) SaveCall(ctx context.Context, rec CallRecord) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	ownerStr := ""
-	if rec.Owner != nil {
-		ownerStr = *rec.Owner
+	var existing CallRecord
+	err := cs.db.WithContext(ctx).Where("id = ?", rec.CallID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if rec.UserID == "" && rec.SessionID != "" {
+			var sess sessionRow
+			if err := cs.db.WithContext(ctx).Where("id = ?", rec.SessionID).First(&sess).Error; err == nil {
+				rec.UserID = sess.UserID
+			}
+		}
+		if rec.ConnectedAt != nil && rec.EndedAt != nil && *rec.EndedAt > *rec.ConnectedAt {
+			rec.DurationSec = int((*rec.EndedAt - *rec.ConnectedAt) / 1000)
+		}
+		return cs.db.WithContext(ctx).Create(&rec).Error
+	} else if err != nil {
+		return err
 	}
 
-	var connectedAt *int64 = rec.ConnectedAt
-	var endedAt *int64 = rec.EndedAt
-	var durationSec int64 = 0
-
-	if connectedAt != nil && endedAt != nil && *endedAt >= *connectedAt {
-		durationSec = (*endedAt - *connectedAt) / 1000
+	updates := map[string]any{
+		"session_id": rec.SessionID,
+		"direction":  rec.Direction,
+		"peer":       rec.Peer,
+		"status":     rec.Status,
+		"started_at": rec.StartedAt,
+	}
+	if rec.UserID != "" {
+		updates["user_id"] = rec.UserID
+	}
+	if rec.SessionName != "" {
+		updates["session_name"] = rec.SessionName
+	}
+	if rec.SessionPhone != "" {
+		updates["session_phone"] = rec.SessionPhone
+	}
+	if rec.SessionPictureURL != "" {
+		updates["session_picture_url"] = rec.SessionPictureURL
+	}
+	if rec.Name != "" {
+		updates["peer_name"] = rec.Name
+	}
+	if rec.PictureURL != "" {
+		updates["picture_url"] = rec.PictureURL
+	}
+	if rec.Owner != nil && *rec.Owner != "" {
+		updates["owner"] = *rec.Owner
+	}
+	if rec.ConnectedAt != nil {
+		updates["connected_at"] = *rec.ConnectedAt
+	}
+	if rec.EndedAt != nil {
+		updates["ended_at"] = *rec.EndedAt
+	}
+	if rec.EndReason != "" {
+		updates["end_reason"] = rec.EndReason
+	}
+	if rec.ConnectedAt != nil && rec.EndedAt != nil && *rec.EndedAt > *rec.ConnectedAt {
+		updates["duration_seconds"] = int((*rec.EndedAt - *rec.ConnectedAt) / 1000)
 	}
 
-	userID := rec.UserID
-	if userID == "" && rec.SessionID != "" {
-		_ = cs.db.QueryRowContext(ctx, `SELECT user_id FROM sessions WHERE id = ?`, rec.SessionID).Scan(&userID)
-	}
+	return cs.db.WithContext(ctx).Model(&CallRecord{}).Where("id = ?", rec.CallID).Updates(updates).Error
+}
 
-	query := `
-	INSERT INTO call_records (
-		id, session_id, user_id, session_name, session_phone, session_picture_url, direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET
-		session_id = excluded.session_id,
-		user_id = CASE WHEN excluded.user_id != '' THEN excluded.user_id ELSE call_records.user_id END,
-		session_name = CASE WHEN excluded.session_name != '' THEN excluded.session_name ELSE call_records.session_name END,
-		session_phone = CASE WHEN excluded.session_phone != '' THEN excluded.session_phone ELSE call_records.session_phone END,
-		session_picture_url = CASE WHEN excluded.session_picture_url != '' THEN excluded.session_picture_url ELSE call_records.session_picture_url END,
-		direction = excluded.direction,
-		peer = excluded.peer,
-		peer_name = CASE WHEN excluded.peer_name != '' THEN excluded.peer_name ELSE call_records.peer_name END,
-		picture_url = CASE WHEN excluded.picture_url != '' THEN excluded.picture_url ELSE call_records.picture_url END,
-		owner = CASE WHEN excluded.owner != '' THEN excluded.owner ELSE call_records.owner END,
-		status = excluded.status,
-		started_at = excluded.started_at,
-		connected_at = COALESCE(excluded.connected_at, call_records.connected_at),
-		ended_at = COALESCE(excluded.ended_at, call_records.ended_at),
-		duration_seconds = excluded.duration_seconds,
-		end_reason = CASE WHEN excluded.end_reason != '' THEN excluded.end_reason ELSE call_records.end_reason END
-	`
-
-	_, err := cs.db.ExecContext(ctx, query,
-		rec.CallID, rec.SessionID, userID, rec.SessionName, rec.SessionPhone, rec.SessionPictureURL, rec.Direction, rec.Peer, rec.Name, rec.PictureURL,
-		ownerStr, string(rec.Status), rec.StartedAt, connectedAt, endedAt, durationSec, rec.EndReason,
-	)
-	return err
+func (cs *callStore) SaveOrUpdate(ctx context.Context, rec CallRecord) error {
+	return cs.SaveCall(ctx, rec)
 }
 
 func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]CallRecord, int, error) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
-	whereClause := []string{"1=1"}
-	args := []any{}
+	q := cs.db.WithContext(ctx).Model(&CallRecord{})
 
 	if filter.SessionID != "" {
-		whereClause = append(whereClause, "session_id = ?")
-		args = append(args, filter.SessionID)
+		q = q.Where("session_id = ?", filter.SessionID)
 	}
 	if filter.UserID != "" {
-		whereClause = append(whereClause, "(user_id = ? OR session_id IN (SELECT id FROM sessions WHERE user_id = ?))")
-		args = append(args, filter.UserID, filter.UserID)
+		subQuery := cs.db.Model(&sessionRow{}).Select("id").Where("user_id = ?", filter.UserID)
+		q = q.Where("user_id = ? OR session_id IN (?)", filter.UserID, subQuery)
 	}
 	if filter.Owner != "" {
-		whereClause = append(whereClause, "owner = ?")
-		args = append(args, filter.Owner)
+		q = q.Where("owner = ?", filter.Owner)
 	}
 	if filter.Direction != "" {
-		whereClause = append(whereClause, "direction = ?")
-		args = append(args, filter.Direction)
+		q = q.Where("direction = ?", filter.Direction)
 	}
 	if filter.Status != "" {
-		whereClause = append(whereClause, "status = ?")
-		args = append(args, filter.Status)
+		q = q.Where("status = ?", filter.Status)
 	}
 	if filter.StartDate > 0 {
-		whereClause = append(whereClause, "started_at >= ?")
-		args = append(args, filter.StartDate)
+		q = q.Where("started_at >= ?", filter.StartDate)
 	}
 	if filter.EndDate > 0 {
-		whereClause = append(whereClause, "started_at <= ?")
-		args = append(args, filter.EndDate)
+		q = q.Where("started_at <= ?", filter.EndDate)
 	}
 	if filter.Search != "" {
-		whereClause = append(whereClause, "(peer LIKE ? OR peer_name LIKE ? OR session_name LIKE ? OR session_phone LIKE ?)")
-		searchTerm := "%" + filter.Search + "%"
-		args = append(args, searchTerm, searchTerm, searchTerm, searchTerm)
+		term := "%" + strings.ToLower(filter.Search) + "%"
+		q = q.Where("LOWER(peer) LIKE ? OR LOWER(peer_name) LIKE ? OR LOWER(session_name) LIKE ? OR session_phone LIKE ?", term, term, term, term)
 	}
 
-	whereStmt := strings.Join(whereClause, " AND ")
-
-	var total int
-	countQuery := "SELECT COUNT(*) FROM call_records WHERE " + whereStmt
-	err := cs.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
-	if err != nil {
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -231,104 +206,39 @@ func (cs *callStore) ListHistory(ctx context.Context, filter CallFilter) ([]Call
 	}
 	offset := (page - 1) * limit
 
-	query := fmt.Sprintf(`
-		SELECT id, session_id, COALESCE(user_id, ''), COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
-		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
-		FROM call_records
-		WHERE %s
-		ORDER BY started_at DESC
-		LIMIT ? OFFSET ?
-	`, whereStmt)
-
-	queryArgs := append(args, limit, offset)
-	rows, err := cs.db.QueryContext(ctx, query, queryArgs...)
-	if err != nil {
+	var records []CallRecord
+	if err := q.Order("started_at desc").Limit(limit).Offset(offset).Find(&records).Error; err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
 
-	records := make([]CallRecord, 0)
-	for rows.Next() {
-		var r CallRecord
-		var ownerStr string
-		var statusStr string
-		var connAt, endAt sql.NullInt64
-
-		err := rows.Scan(
-			&r.CallID, &r.SessionID, &r.UserID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
-			&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
-			&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if ownerStr != "" {
-			r.Owner = &ownerStr
-		}
-		r.Status = CallStatus(statusStr)
-		if connAt.Valid {
-			v := connAt.Int64
-			r.ConnectedAt = &v
-		}
-		if endAt.Valid {
-			v := endAt.Int64
-			r.EndedAt = &v
-		}
-		records = append(records, r)
-	}
-
-	return records, total, nil
+	return records, int(total), nil
 }
 
 func (cs *callStore) SaveRecordingPath(ctx context.Context, callID, path string) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	query := `UPDATE call_records SET recording_path = ?, transcription_status = 'pending' WHERE id = ?`
-	_, err := cs.db.ExecContext(ctx, query, path, callID)
-	return err
+	return cs.db.WithContext(ctx).Model(&CallRecord{}).Where("id = ?", callID).Updates(map[string]any{
+		"recording_path":       path,
+		"transcription_status": "pending",
+	}).Error
 }
 
 func (cs *callStore) SaveTranscript(ctx context.Context, callID, transcriptJSON, summary, status string) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	query := `UPDATE call_records SET transcript_json = ?, transcript_summary = ?, transcription_status = ? WHERE id = ?`
-	_, err := cs.db.ExecContext(ctx, query, transcriptJSON, summary, status, callID)
-	return err
+	return cs.db.WithContext(ctx).Model(&CallRecord{}).Where("id = ?", callID).Updates(map[string]any{
+		"transcript_json":      transcriptJSON,
+		"transcript_summary":   summary,
+		"transcription_status": status,
+	}).Error
 }
 
 func (cs *callStore) GetCallRecord(ctx context.Context, callID string) (*CallRecord, error) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
-	query := `
-		SELECT id, session_id, COALESCE(user_id, ''), COALESCE(session_name, ''), COALESCE(session_phone, ''), COALESCE(session_picture_url, ''), direction, peer, peer_name, picture_url, owner, status, started_at, connected_at, ended_at, duration_seconds, end_reason,
-		COALESCE(recording_path, ''), COALESCE(transcript_json, ''), COALESCE(transcript_summary, ''), COALESCE(transcription_status, '')
-		FROM call_records WHERE id = ?
-	`
 	var r CallRecord
-	var ownerStr string
-	var statusStr string
-	var connAt, endAt sql.NullInt64
-
-	err := cs.db.QueryRowContext(ctx, query, callID).Scan(
-		&r.CallID, &r.SessionID, &r.UserID, &r.SessionName, &r.SessionPhone, &r.SessionPictureURL, &r.Direction, &r.Peer, &r.Name, &r.PictureURL,
-		&ownerStr, &statusStr, &r.StartedAt, &connAt, &endAt, new(int64), &r.EndReason,
-		&r.RecordingPath, &r.TranscriptJSON, &r.TranscriptSummary, &r.TranscriptionStatus,
-	)
-	if err != nil {
+	if err := cs.db.WithContext(ctx).Where("id = ?", callID).First(&r).Error; err != nil {
 		return nil, err
-	}
-	if ownerStr != "" {
-		r.Owner = &ownerStr
-	}
-	r.Status = CallStatus(statusStr)
-	if connAt.Valid {
-		v := connAt.Int64
-		r.ConnectedAt = &v
-	}
-	if endAt.Valid {
-		v := endAt.Int64
-		r.EndedAt = &v
 	}
 	return &r, nil
 }
@@ -382,11 +292,10 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	var totalCalls, completed, missed, rejected, inbound, outbound int
 	var totalDur, avgDur, avgWait float64
 
-	err := cs.db.QueryRowContext(ctx, summaryQuery, args...).Scan(
+	if err := cs.db.WithContext(ctx).Raw(summaryQuery, args...).Row().Scan(
 		&totalCalls, &completed, &missed, &rejected, &inbound, &outbound, &totalDur, &avgDur, &avgWait,
-	)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, err
+	); err != nil {
+		return nil, fmt.Errorf("analytics summary: %w", err)
 	}
 
 	res.Summary.TotalCalls = totalCalls
@@ -405,34 +314,31 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	// By Agent
 	agentQuery := fmt.Sprintf(`
 		SELECT 
-			COALESCE(NULLIF(owner, ''), 'Sem Agente') as agent,
+			COALESCE(owner, 'Desconhecido') as agent_name,
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(duration_seconds), 0),
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
 		FROM call_records
-		WHERE %s
-		GROUP BY agent
+		WHERE %s AND owner IS NOT NULL AND owner != ''
+		GROUP BY owner
 		ORDER BY COUNT(*) DESC
 	`, whereStmt)
 
-	agentRows, err := cs.db.QueryContext(ctx, agentQuery, args...)
-	if err == nil {
-		defer agentRows.Close()
-		for agentRows.Next() {
-			var am AgentMetric
-			var tot, comp int
-			var totD, avgD float64
-			if err := agentRows.Scan(&am.Owner, &tot, &comp, &totD, &avgD); err == nil {
-				am.TotalCalls = tot
-				am.CompletedCalls = comp
-				am.TotalDuration = int64(totD)
-				am.AvgDuration = int64(avgD)
-				if tot > 0 {
-					am.AnswerRate = float64(comp) / float64(tot) * 100.0
-				}
-				res.ByAgent = append(res.ByAgent, am)
+	agentRows, err := cs.db.WithContext(ctx).Raw(agentQuery, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("analytics query: %w", err)
+	}
+	defer agentRows.Close()
+	for agentRows.Next() {
+		var am AgentMetric
+		var avgD float64
+		if err := agentRows.Scan(&am.Owner, &am.TotalCalls, &am.CompletedCalls, &am.TotalDuration, &avgD); err == nil {
+			am.AvgDuration = int64(avgD)
+			if am.TotalCalls > 0 {
+				am.AnswerRate = float64(am.CompletedCalls) / float64(am.TotalCalls) * 100.0
 			}
+			res.ByAgent = append(res.ByAgent, am)
 		}
 	}
 
@@ -440,39 +346,47 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 	sessionQuery := fmt.Sprintf(`
 		SELECT 
 			session_id,
-			COALESCE(MAX(session_name), ''),
-			COALESCE(MAX(session_phone), ''),
-			COALESCE(MAX(session_picture_url), ''),
+			COALESCE(session_name, ''),
+			COALESCE(session_phone, ''),
+			COALESCE(session_picture_url, ''),
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN connected_at IS NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'ended' AND connected_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END), 0),
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
 		FROM call_records
 		WHERE %s
-		GROUP BY session_id
+		GROUP BY session_id, session_name, session_phone, session_picture_url
 		ORDER BY COUNT(*) DESC
 	`, whereStmt)
 
-	sessionRows, err := cs.db.QueryContext(ctx, sessionQuery, args...)
-	if err == nil {
-		defer sessionRows.Close()
-		for sessionRows.Next() {
-			var sm SessionMetric
-			var avgD float64
-			if err := sessionRows.Scan(&sm.SessionID, &sm.SessionName, &sm.SessionPhone, &sm.SessionPictureURL, &sm.TotalCalls, &sm.Completed, &sm.Missed, &avgD); err == nil {
-				sm.AvgDuration = int64(avgD)
-				if sm.TotalCalls > 0 {
-					sm.AnswerRate = float64(sm.Completed) / float64(sm.TotalCalls) * 100.0
-				}
-				res.BySession = append(res.BySession, sm)
+	sessRows, err := cs.db.WithContext(ctx).Raw(sessionQuery, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("analytics query: %w", err)
+	}
+	defer sessRows.Close()
+	for sessRows.Next() {
+		var sm SessionMetric
+		var avgD float64
+		if err := sessRows.Scan(&sm.SessionID, &sm.SessionName, &sm.SessionPhone, &sm.SessionPictureURL, &sm.TotalCalls, &sm.Completed, &sm.Missed, &avgD); err == nil {
+			sm.AvgDuration = int64(avgD)
+			if sm.TotalCalls > 0 {
+				sm.AnswerRate = float64(sm.Completed) / float64(sm.TotalCalls) * 100.0
 			}
+			res.BySession = append(res.BySession, sm)
 		}
 	}
 
-	// By Daily
+	// By Daily - dialect compatible
+	dateExpr := "strftime('%Y-%m-%d', datetime(started_at / 1000, 'unixepoch', 'localtime'))"
+	if cs.dialect == "postgres" {
+		dateExpr = "to_char(to_timestamp(started_at / 1000), 'YYYY-MM-DD')"
+	} else if cs.dialect == "mysql" {
+		dateExpr = "FROM_UNIXTIME(started_at / 1000, '%Y-%m-%d')"
+	}
+
 	dailyQuery := fmt.Sprintf(`
 		SELECT 
-			strftime('%%Y-%%m-%%d', datetime(started_at / 1000, 'unixepoch', 'localtime')) as call_date,
+			%s as call_date,
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN connected_at IS NOT NULL THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END), 0),
@@ -480,21 +394,22 @@ func (cs *callStore) GetAnalytics(ctx context.Context, filter CallFilter) (*Call
 			COALESCE(AVG(CASE WHEN connected_at IS NOT NULL THEN duration_seconds END), 0)
 		FROM call_records
 		WHERE %s
-		GROUP BY call_date
+		GROUP BY %s
 		ORDER BY call_date DESC
 		LIMIT 30
-	`, whereStmt)
+	`, dateExpr, whereStmt, dateExpr)
 
-	dailyRows, err := cs.db.QueryContext(ctx, dailyQuery, args...)
-	if err == nil {
-		defer dailyRows.Close()
-		for dailyRows.Next() {
-			var dm DailyMetric
-			var avgD float64
-			if err := dailyRows.Scan(&dm.Date, &dm.TotalCalls, &dm.CompletedCalls, &dm.InboundCount, &dm.OutboundCount, &avgD); err == nil {
-				dm.AvgDuration = int64(avgD)
-				res.ByDaily = append(res.ByDaily, dm)
-			}
+	dRows, err := cs.db.WithContext(ctx).Raw(dailyQuery, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("analytics query: %w", err)
+	}
+	defer dRows.Close()
+	for dRows.Next() {
+		var dm DailyMetric
+		var avgD float64
+		if err := dRows.Scan(&dm.Date, &dm.TotalCalls, &dm.CompletedCalls, &dm.InboundCount, &dm.OutboundCount, &avgD); err == nil {
+			dm.AvgDuration = int64(avgD)
+			res.ByDaily = append(res.ByDaily, dm)
 		}
 	}
 

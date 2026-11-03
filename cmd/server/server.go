@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
+	"fmt"
 	"log/slog"
 
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -27,56 +27,61 @@ type server struct {
 	staticDir   string
 }
 
-func openDB(dbPath string) (*sql.DB, error) {
-	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	return db, nil
-}
-
 func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log *slog.Logger) (*server, error) {
-	db, err := openDB(dbPath)
+	dbCfg, err := initGORM(dbPath, log.Enabled(ctx, slog.LevelDebug))
 	if err != nil {
 		return nil, err
 	}
-	container := sqlstore.NewWithDB(db, "sqlite3", waLog.Noop)
+
+	var container *sqlstore.Container
+	switch dbCfg.DialectName {
+	case "postgres":
+		container = sqlstore.NewWithDB(dbCfg.SqlDB, "postgres", waLog.Noop)
+	case "sqlite3":
+		container = sqlstore.NewWithDB(dbCfg.SqlDB, "sqlite3", waLog.Noop)
+	default:
+		// MySQL fallback for whatsmeow container: WhatsApp keys stay in local SQLite
+		var cErr error
+		container, cErr = sqlstore.New(ctx, "sqlite3", "file:whatsapp_devices.db?_foreign_keys=1&_busy_timeout=10000&_journal_mode=WAL", waLog.Noop)
+		if cErr != nil {
+			return nil, fmt.Errorf("init whatsmeow container: %w", cErr)
+		}
+	}
 	if err := container.Upgrade(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upgrade whatsmeow container: %w", err)
 	}
-	store, err := newSessionStore(ctx, db)
+
+	store, err := newSessionStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	callStore, err := newCallStore(ctx, db)
+	callStore, err := newCallStore(ctx, dbCfg.GormDB, dbCfg.DialectName)
 	if err != nil {
 		return nil, err
 	}
 
-	contactStore, err := newContactStore(ctx, db)
+	contactStore, err := newContactStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	campaignStore, err := newCampaignStore(ctx, db)
+	campaignStore, err := newCampaignStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	playbookStore, err := newPlaybookStore(ctx, db)
+	playbookStore, err := newPlaybookStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	settingsStore, err := newSettingsStore(ctx, db)
+	settingsStore, err := newSettingsStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	agentStore, err := newAIAgentStore(ctx, db)
+	agentStore, err := newAIAgentStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
@@ -99,12 +104,12 @@ func newServer(ctx context.Context, dbPath, staticDir string, maxCalls int, log 
 		return ""
 	}
 
-	planStore, err := newPlanStore(ctx, db)
+	planStore, err := newPlanStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}
 
-	userStore, err := newUserStore(ctx, db)
+	userStore, err := newUserStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		return nil, err
 	}

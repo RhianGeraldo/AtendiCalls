@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type CampaignStatus string
@@ -29,79 +30,60 @@ const (
 )
 
 type CampaignItem struct {
-	ID         string             `json:"id"`
-	CampaignID string             `json:"campaignId"`
-	ContactID  string             `json:"contactId"`
-	Name       string             `json:"name"`
-	Phone      string             `json:"phone"`
-	PictureURL string             `json:"pictureUrl"`
-	Status     CampaignItemStatus `json:"status"`
+	ID         string             `gorm:"primaryKey" json:"id"`
+	CampaignID string             `gorm:"index;not null" json:"campaignId"`
+	ContactID  string             `gorm:"default:''" json:"contactId"`
+	Name       string             `gorm:"not null" json:"name"`
+	Phone      string             `gorm:"not null" json:"phone"`
+	PictureURL string             `gorm:"default:''" json:"pictureUrl"`
+	Status     CampaignItemStatus `gorm:"default:'pending'" json:"status"`
 	StartedAt  *int64             `json:"startedAt,omitempty"`
 	EndedAt    *int64             `json:"endedAt,omitempty"`
-	EndReason  string             `json:"endReason,omitempty"`
-	Notes      string             `json:"notes,omitempty"`
+	EndReason  string             `gorm:"default:''" json:"endReason,omitempty"`
+	Notes      string             `gorm:"type:text;default:''" json:"notes,omitempty"`
+}
+
+func (CampaignItem) TableName() string {
+	return "campaign_items"
 }
 
 type Campaign struct {
-	ID           string         `json:"id"`
-	UserID       string         `json:"userId,omitempty"`
-	Name         string         `json:"name"`
-	SessionID    string         `json:"sessionId"`
-	SessionName  string         `json:"sessionName,omitempty"`
-	SessionPhone string         `json:"sessionPhone,omitempty"`
-	Playbook     string         `json:"playbook"`
-	DelaySeconds int            `json:"delaySeconds"`
-	Status       CampaignStatus `json:"status"`
-	TotalItems   int            `json:"totalItems"`
-	DoneItems    int            `json:"doneItems"`
-	Items        []CampaignItem `json:"items,omitempty"`
-	CreatedAt    int64          `json:"createdAt"`
-	UpdatedAt    int64          `json:"updatedAt"`
+	ID           string         `gorm:"primaryKey" json:"id"`
+	UserID       string         `gorm:"index;default:''" json:"userId,omitempty"`
+	Name         string         `gorm:"not null" json:"name"`
+	SessionID    string         `gorm:"index;not null" json:"sessionId"`
+	SessionName  string         `gorm:"-" json:"sessionName,omitempty"`
+	SessionPhone string         `gorm:"-" json:"sessionPhone,omitempty"`
+	Playbook     string         `gorm:"type:text;default:''" json:"playbook"`
+	DelaySeconds int            `gorm:"default:5" json:"delaySeconds"`
+	Status       CampaignStatus `gorm:"default:'pending'" json:"status"`
+	TotalItems   int            `gorm:"-" json:"totalItems"`
+	DoneItems    int            `gorm:"-" json:"doneItems"`
+	Items        []CampaignItem `gorm:"foreignKey:CampaignID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
+	CreatedAt    int64          `gorm:"not null" json:"createdAt"`
+	UpdatedAt    int64          `gorm:"not null" json:"updatedAt"`
+}
+
+func (Campaign) TableName() string {
+	return "campaigns"
 }
 
 type campaignStore struct {
-	db *sql.DB
+	db *gorm.DB
 	mu sync.RWMutex
 }
 
-func newCampaignStore(ctx context.Context, db *sql.DB) (*campaignStore, error) {
-	query := `
-	CREATE TABLE IF NOT EXISTS campaigns (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		session_id TEXT NOT NULL,
-		playbook TEXT DEFAULT '',
-		delay_seconds INTEGER DEFAULT 5,
-		status TEXT NOT NULL DEFAULT 'pending',
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	);
-
-	CREATE TABLE IF NOT EXISTS campaign_items (
-		id TEXT PRIMARY KEY,
-		campaign_id TEXT NOT NULL,
-		contact_id TEXT DEFAULT '',
-		name TEXT NOT NULL,
-		phone TEXT NOT NULL,
-		picture_url TEXT DEFAULT '',
-		status TEXT NOT NULL DEFAULT 'pending',
-		started_at INTEGER,
-		ended_at INTEGER,
-		end_reason TEXT DEFAULT '',
-		notes TEXT DEFAULT '',
-		FOREIGN KEY(campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_campaign_items_camp ON campaign_items(campaign_id);
-	`
-	_, err := db.ExecContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create campaigns tables: %w", err)
+func newCampaignStore(ctx context.Context, db *gorm.DB) (*campaignStore, error) {
+	if !db.Migrator().HasTable(&Campaign{}) {
+		if err := db.WithContext(ctx).AutoMigrate(&Campaign{}); err != nil {
+			return nil, fmt.Errorf("auto migrate campaigns: %w", err)
+		}
 	}
-
-	_, _ = db.ExecContext(ctx, `ALTER TABLE campaigns ADD COLUMN user_id TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_campaigns_user_id ON campaigns(user_id)`)
-
+	if !db.Migrator().HasTable(&CampaignItem{}) {
+		if err := db.WithContext(ctx).AutoMigrate(&CampaignItem{}); err != nil {
+			return nil, fmt.Errorf("auto migrate campaign_items: %w", err)
+		}
+	}
 	return &campaignStore{db: db}, nil
 }
 
@@ -120,28 +102,21 @@ func (cs *campaignStore) Create(ctx context.Context, c Campaign, items []Campaig
 	c.CreatedAt = now
 	c.UpdatedAt = now
 
-	tx, err := cs.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	queryCmp := `INSERT INTO campaigns (id, user_id, name, session_id, playbook, delay_seconds, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = tx.ExecContext(ctx, queryCmp, c.ID, c.UserID, c.Name, c.SessionID, c.Playbook, c.DelaySeconds, c.Status, c.CreatedAt, c.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create campaign: %w", err)
-	}
-
-	queryItem := `INSERT INTO campaign_items (id, campaign_id, contact_id, name, phone, picture_url, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`
-	for idx, item := range items {
-		itemID := fmt.Sprintf("%s_item_%d", c.ID, idx+1)
-		_, err := tx.ExecContext(ctx, queryItem, itemID, c.ID, item.ContactID, item.Name, item.Phone, item.PictureURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to insert campaign item: %w", err)
+	for i := range items {
+		if items[i].ID == "" {
+			items[i].ID = fmt.Sprintf("%s_item_%d", c.ID, i+1)
+		}
+		items[i].CampaignID = c.ID
+		if items[i].Status == "" {
+			items[i].Status = CampaignItemPending
 		}
 	}
+	c.Items = items
 
-	if err := tx.Commit(); err != nil {
+	err := cs.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&c).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -150,32 +125,8 @@ func (cs *campaignStore) Create(ctx context.Context, c Campaign, items []Campaig
 
 func (cs *campaignStore) getByIDUnlocked(ctx context.Context, id string) (*Campaign, error) {
 	var c Campaign
-	queryCmp := `SELECT id, COALESCE(user_id, ''), name, session_id, playbook, delay_seconds, status, created_at, updated_at FROM campaigns WHERE id = ?`
-	err := cs.db.QueryRowContext(ctx, queryCmp, id).Scan(
-		&c.ID, &c.UserID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt,
-	)
-	if err != nil {
+	if err := cs.db.WithContext(ctx).Where("id = ?", id).Preload("Items").First(&c).Error; err != nil {
 		return nil, err
-	}
-
-	rows, err := cs.db.QueryContext(ctx, `SELECT id, campaign_id, contact_id, name, phone, picture_url, status, started_at, ended_at, end_reason, notes FROM campaign_items WHERE campaign_id = ? ORDER BY id ASC`, id)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var item CampaignItem
-			var stAt, endAt sql.NullInt64
-			if err := rows.Scan(&item.ID, &item.CampaignID, &item.ContactID, &item.Name, &item.Phone, &item.PictureURL, &item.Status, &stAt, &endAt, &item.EndReason, &item.Notes); err == nil {
-				if stAt.Valid {
-					v := stAt.Int64
-					item.StartedAt = &v
-				}
-				if endAt.Valid {
-					v := endAt.Int64
-					item.EndedAt = &v
-				}
-				c.Items = append(c.Items, item)
-			}
-		}
 	}
 
 	c.TotalItems = len(c.Items)
@@ -200,36 +151,24 @@ func (cs *campaignStore) List(ctx context.Context, userID string) ([]Campaign, e
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
-	whereStmt := ""
-	var args []any
+	var list []Campaign
+	query := cs.db.WithContext(ctx).Model(&Campaign{}).Order("created_at desc")
 	if userID != "" {
-		whereStmt = "WHERE c.user_id = ? OR c.session_id IN (SELECT id FROM sessions WHERE user_id = ?)"
-		args = append(args, userID, userID)
+		subQuery := cs.db.Model(&sessionRow{}).Select("id").Where("user_id = ?", userID)
+		query = query.Where("user_id = ? OR session_id IN (?)", userID, subQuery)
 	}
 
-	query := fmt.Sprintf(`
-	SELECT 
-		c.id, COALESCE(c.user_id, ''), c.name, c.session_id, c.playbook, c.delay_seconds, c.status, c.created_at, c.updated_at,
-		COUNT(i.id) AS total_items,
-		COALESCE(SUM(CASE WHEN i.status IS NOT NULL AND i.status != 'pending' AND i.status != 'calling' THEN 1 ELSE 0 END), 0) AS done_items
-	FROM campaigns c
-	LEFT JOIN campaign_items i ON i.campaign_id = c.id
-	%s
-	GROUP BY c.id
-	ORDER BY c.created_at DESC
-	`, whereStmt)
-	rows, err := cs.db.QueryContext(ctx, query, args...)
-	if err != nil {
+	if err := query.Find(&list).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	list := make([]Campaign, 0)
-	for rows.Next() {
-		var c Campaign
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.SessionID, &c.Playbook, &c.DelaySeconds, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.TotalItems, &c.DoneItems); err == nil {
-			list = append(list, c)
-		}
+	for i := range list {
+		var total int64
+		var done int64
+		_ = cs.db.WithContext(ctx).Model(&CampaignItem{}).Where("campaign_id = ?", list[i].ID).Count(&total).Error
+		_ = cs.db.WithContext(ctx).Model(&CampaignItem{}).Where("campaign_id = ? AND status NOT IN ('pending', 'calling')", list[i].ID).Count(&done).Error
+		list[i].TotalItems = int(total)
+		list[i].DoneItems = int(done)
 	}
 
 	return list, nil
@@ -240,8 +179,10 @@ func (cs *campaignStore) UpdateStatus(ctx context.Context, id string, status Cam
 	defer cs.mu.Unlock()
 
 	now := time.Now().UnixMilli()
-	_, err := cs.db.ExecContext(ctx, `UPDATE campaigns SET status = ?, updated_at = ? WHERE id = ?`, status, now, id)
-	return err
+	return cs.db.WithContext(ctx).Model(&Campaign{}).Where("id = ?", id).Updates(map[string]any{
+		"status":     status,
+		"updated_at": now,
+	}).Error
 }
 
 func (cs *campaignStore) UpdateItem(ctx context.Context, itemID string, status CampaignItemStatus, endReason, notes string) error {
@@ -249,15 +190,23 @@ func (cs *campaignStore) UpdateItem(ctx context.Context, itemID string, status C
 	defer cs.mu.Unlock()
 
 	now := time.Now().UnixMilli()
-	query := `UPDATE campaign_items SET status = ?, ended_at = ?, end_reason = ?, notes = ? WHERE id = ?`
-	_, err := cs.db.ExecContext(ctx, query, status, now, endReason, notes, itemID)
-	return err
+	updates := map[string]any{
+		"status":     status,
+		"ended_at":   now,
+		"end_reason": endReason,
+		"notes":      notes,
+	}
+	return cs.db.WithContext(ctx).Model(&CampaignItem{}).Where("id = ?", itemID).Updates(updates).Error
 }
 
 func (cs *campaignStore) Delete(ctx context.Context, id string) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	_, err := cs.db.ExecContext(ctx, `DELETE FROM campaigns WHERE id = ?`, id)
-	return err
+	return cs.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("campaign_id = ?", id).Delete(&CampaignItem{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&Campaign{}).Error
+	})
 }

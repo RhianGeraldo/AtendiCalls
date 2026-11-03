@@ -2,76 +2,87 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Plan struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	Description        string `json:"description"`
-	PriceCents         int    `json:"priceCents"`
-	MaxInstances       int    `json:"maxInstances"`
-	MaxConcurrentCalls int    `json:"maxConcurrentCalls"`
-	TrialDays          int    `json:"trialDays"`
-	HasVoiceAI         bool   `json:"hasVoiceAi"`
-	HasAPIAccess       bool   `json:"hasApiAccess"`
-	HasCampaigns       bool   `json:"hasCampaigns"`
-	IsDefault          bool   `json:"isDefault"`
-	IsActive           bool   `json:"isActive"`
-	CreatedAt          int64  `json:"createdAt"`
+	ID                 string `gorm:"primaryKey" json:"id"`
+	Name               string `gorm:"not null" json:"name"`
+	Description        string `gorm:"type:text" json:"description"`
+	PriceCents         int    `gorm:"default:0" json:"priceCents"`
+	MaxInstances       int    `gorm:"not null;default:1" json:"maxInstances"`
+	MaxConcurrentCalls int    `gorm:"not null;default:2" json:"maxConcurrentCalls"`
+	TrialDays          int    `gorm:"default:0" json:"trialDays"`
+	HasVoiceAI         bool   `gorm:"default:true" json:"hasVoiceAi"`
+	HasAPIAccess       bool   `gorm:"default:true" json:"hasApiAccess"`
+	HasCampaigns       bool   `gorm:"default:true" json:"hasCampaigns"`
+	IsDefault          bool   `gorm:"default:false" json:"isDefault"`
+	IsActive           bool   `gorm:"default:true" json:"isActive"`
+	CreatedAt          int64  `gorm:"not null" json:"createdAt"`
+}
+
+func (Plan) TableName() string {
+	return "plans"
 }
 
 type planStore struct {
-	db *sql.DB
+	db *gorm.DB
 	mu sync.RWMutex
 }
 
-func newPlanStore(ctx context.Context, db *sql.DB) (*planStore, error) {
-	query := `CREATE TABLE IF NOT EXISTS plans (
-		id                    TEXT PRIMARY KEY,
-		name                  TEXT NOT NULL,
-		description           TEXT DEFAULT '',
-		price_cents           INTEGER DEFAULT 0,
-		max_instances         INTEGER NOT NULL DEFAULT 1,
-		max_concurrent_calls  INTEGER NOT NULL DEFAULT 2,
-		trial_days            INTEGER DEFAULT 0,
-		has_voice_ai          BOOLEAN DEFAULT 1,
-		has_api_access        BOOLEAN DEFAULT 1,
-		has_campaigns         BOOLEAN DEFAULT 1,
-		is_default            BOOLEAN DEFAULT 0,
-		is_active             BOOLEAN DEFAULT 1,
-		created_at            INTEGER NOT NULL
-	);`
-	if _, err := db.ExecContext(ctx, query); err != nil {
-		return nil, fmt.Errorf("create plans table: %w", err)
+func newPlanStore(ctx context.Context, db *gorm.DB) (*planStore, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&Plan{}); err != nil {
+		return nil, err
 	}
 
 	store := &planStore{db: db}
 
 	// Seed default plans if empty
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plans`).Scan(&count); err == nil && count == 0 {
+	var count int64
+	if err := db.WithContext(ctx).Model(&Plan{}).Count(&count).Error; err == nil && count == 0 {
 		now := time.Now().UnixMilli()
-		// Free default plan: 1 WhatsApp instance, 2 concurrent calls, free
-		_, _ = db.ExecContext(ctx, `INSERT INTO plans (
-			id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-			has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			"plan_free", "Gratuito / Teste", "Plano inicial com 1 linha WhatsApp e agente de voz IA.",
-			0, 1, 2, 0, true, true, true, true, true, now)
+		freePlan := Plan{
+			ID:                 "plan_free",
+			Name:               "Gratuito / Teste",
+			Description:        "Plano inicial com 1 linha WhatsApp e agente de voz IA.",
+			PriceCents:         0,
+			MaxInstances:       1,
+			MaxConcurrentCalls: 2,
+			TrialDays:          0,
+			HasVoiceAI:         true,
+			HasAPIAccess:       true,
+			HasCampaigns:       true,
+			IsDefault:          true,
+			IsActive:           true,
+			CreatedAt:          now,
+		}
+		if err := db.WithContext(ctx).Create(&freePlan).Error; err != nil {
+			return nil, err
+		}
 
-		// Pro plan: 3 WhatsApp instances
-		_, _ = db.ExecContext(ctx, `INSERT INTO plans (
-			id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-			has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			"plan_pro", "Profissional", "Ideal para pequenas e médias equipes: 3 linhas simultâneas.",
-			9700, 3, 5, 0, true, true, true, false, true, now)
+		proPlan := Plan{
+			ID:                 "plan_pro",
+			Name:               "Profissional",
+			Description:        "Ideal para pequenas e médias equipes: 3 linhas simultâneas.",
+			PriceCents:         9700,
+			MaxInstances:       3,
+			MaxConcurrentCalls: 5,
+			TrialDays:          0,
+			HasVoiceAI:         true,
+			HasAPIAccess:       true,
+			HasCampaigns:       true,
+			IsDefault:          false,
+			IsActive:           true,
+			CreatedAt:          now,
+		}
+		if err := db.WithContext(ctx).Create(&proPlan).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	return store, nil
@@ -81,32 +92,15 @@ func (s *planStore) listPlans(ctx context.Context, onlyActive bool) ([]Plan, err
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-		has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-		FROM plans`
+	var plans []Plan
+	query := s.db.WithContext(ctx).Order("price_cents asc, created_at asc")
 	if onlyActive {
-		query += ` WHERE is_active = 1`
+		query = query.Where("is_active = ?", true)
 	}
-	query += ` ORDER BY price_cents ASC, created_at ASC`
-
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
+	if err := query.Find(&plans).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var plans []Plan
-	for rows.Next() {
-		var p Plan
-		if err := rows.Scan(
-			&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.MaxInstances, &p.MaxConcurrentCalls, &p.TrialDays,
-			&p.HasVoiceAI, &p.HasAPIAccess, &p.HasCampaigns, &p.IsDefault, &p.IsActive, &p.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		plans = append(plans, p)
-	}
-	return plans, rows.Err()
+	return plans, nil
 }
 
 func (s *planStore) getPlanByID(ctx context.Context, id string) (*Plan, error) {
@@ -114,14 +108,9 @@ func (s *planStore) getPlanByID(ctx context.Context, id string) (*Plan, error) {
 	defer s.mu.RUnlock()
 
 	var p Plan
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-		has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-		FROM plans WHERE id = ?`, id).Scan(
-		&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.MaxInstances, &p.MaxConcurrentCalls, &p.TrialDays,
-		&p.HasVoiceAI, &p.HasAPIAccess, &p.HasCampaigns, &p.IsDefault, &p.IsActive, &p.CreatedAt,
-	)
+	err := s.db.WithContext(ctx).Where("id = ?", id).First(&p).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
@@ -134,25 +123,16 @@ func (s *planStore) getDefaultPlan(ctx context.Context) (*Plan, error) {
 	defer s.mu.RUnlock()
 
 	var p Plan
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-		has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-		FROM plans WHERE is_default = 1 AND is_active = 1 LIMIT 1`).Scan(
-		&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.MaxInstances, &p.MaxConcurrentCalls, &p.TrialDays,
-		&p.HasVoiceAI, &p.HasAPIAccess, &p.HasCampaigns, &p.IsDefault, &p.IsActive, &p.CreatedAt,
-	)
+	err := s.db.WithContext(ctx).Where("is_default = ? AND is_active = ?", true, true).First(&p).Error
+	if err == nil {
+		return &p, nil
+	}
+
+	// Fallback to first active plan
+	err = s.db.WithContext(ctx).Where("is_active = ?", true).Order("price_cents asc").First(&p).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// Fallback to first active plan
-			err = s.db.QueryRowContext(ctx, `SELECT id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-				has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-				FROM plans WHERE is_active = 1 ORDER BY price_cents ASC LIMIT 1`).Scan(
-				&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.MaxInstances, &p.MaxConcurrentCalls, &p.TrialDays,
-				&p.HasVoiceAI, &p.HasAPIAccess, &p.HasCampaigns, &p.IsDefault, &p.IsActive, &p.CreatedAt,
-			)
-			if err != nil {
-				return nil, err
-			}
-			return &p, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -179,18 +159,12 @@ func (s *planStore) createPlan(ctx context.Context, p Plan) (*Plan, error) {
 	p.CreatedAt = time.Now().UnixMilli()
 
 	if p.IsDefault {
-		// Reset other defaults
-		_, _ = s.db.ExecContext(ctx, `UPDATE plans SET is_default = 0`)
+		if err := s.db.WithContext(ctx).Model(&Plan{}).Where("1=1").Update("is_default", false).Error; err != nil {
+			return nil, err
+		}
 	}
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO plans (
-		id, name, description, price_cents, max_instances, max_concurrent_calls, trial_days,
-		has_voice_ai, has_api_access, has_campaigns, is_default, is_active, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Description, p.PriceCents, p.MaxInstances, p.MaxConcurrentCalls, p.TrialDays,
-		p.HasVoiceAI, p.HasAPIAccess, p.HasCampaigns, p.IsDefault, p.IsActive, p.CreatedAt,
-	)
-	if err != nil {
+	if err := s.db.WithContext(ctx).Create(&p).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -217,18 +191,26 @@ func (s *planStore) updatePlan(ctx context.Context, p Plan) (*Plan, error) {
 	}
 
 	if p.IsDefault && !existing.IsDefault {
-		// Reset other defaults
-		_, _ = s.db.ExecContext(ctx, `UPDATE plans SET is_default = 0 WHERE id != ?`, p.ID)
+		if err := s.db.WithContext(ctx).Model(&Plan{}).Where("id != ?", p.ID).Update("is_default", false).Error; err != nil {
+			return nil, err
+		}
 	}
 
-	_, err = s.db.ExecContext(ctx, `UPDATE plans SET
-		name = ?, description = ?, price_cents = ?, max_instances = ?, max_concurrent_calls = ?,
-		trial_days = ?, has_voice_ai = ?, has_api_access = ?, has_campaigns = ?, is_default = ?, is_active = ?
-		WHERE id = ?`,
-		p.Name, p.Description, p.PriceCents, p.MaxInstances, p.MaxConcurrentCalls,
-		p.TrialDays, p.HasVoiceAI, p.HasAPIAccess, p.HasCampaigns, p.IsDefault, p.IsActive, p.ID,
-	)
-	if err != nil {
+	updates := map[string]any{
+		"name":                 p.Name,
+		"description":          p.Description,
+		"price_cents":          p.PriceCents,
+		"max_instances":        p.MaxInstances,
+		"max_concurrent_calls": p.MaxConcurrentCalls,
+		"trial_days":           p.TrialDays,
+		"has_voice_ai":         p.HasVoiceAI,
+		"has_api_access":       p.HasAPIAccess,
+		"has_campaigns":        p.HasCampaigns,
+		"is_default":           p.IsDefault,
+		"is_active":            p.IsActive,
+	}
+
+	if err := s.db.WithContext(ctx).Model(&Plan{}).Where("id = ?", p.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -239,6 +221,5 @@ func (s *planStore) deletePlan(ctx context.Context, id string) error {
 	defer s.mu.Unlock()
 
 	// Soft delete / disable
-	_, err := s.db.ExecContext(ctx, `UPDATE plans SET is_active = 0 WHERE id = ?`, id)
-	return err
+	return s.db.WithContext(ctx).Model(&Plan{}).Where("id = ?", id).Update("is_active", false).Error
 }

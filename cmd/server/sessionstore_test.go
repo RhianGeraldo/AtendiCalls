@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -10,13 +9,13 @@ import (
 func TestSessionStoreRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "sessions_test.db")
-	db, err := sql.Open("sqlite", "file:"+dbPath)
+	dbCfg, err := initGORM(dbPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer dbCfg.SqlDB.Close()
 
-	st, err := newSessionStore(ctx, db)
+	st, err := newSessionStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		t.Fatal(err)
 	}

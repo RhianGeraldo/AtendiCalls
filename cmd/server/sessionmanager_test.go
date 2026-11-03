@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -16,21 +15,21 @@ func newTestManager(t *testing.T) *SessionManager {
 	t.Helper()
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "mgr_test.db")
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	dbCfg, err := initGORM(dbPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { dbCfg.SqlDB.Close() })
 
-	container := sqlstore.NewWithDB(db, "sqlite3", waLog.Noop)
+	container := sqlstore.NewWithDB(dbCfg.SqlDB, "sqlite3", waLog.Noop)
 	if err := container.Upgrade(ctx); err != nil {
 		t.Fatal(err)
 	}
-	store, err := newSessionStore(ctx, db)
+	store, err := newSessionStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings, err := newSettingsStore(ctx, db)
+	settings, err := newSettingsStore(ctx, dbCfg.GormDB)
 	if err != nil {
 		t.Fatal(err)
 	}

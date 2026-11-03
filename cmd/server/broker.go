@@ -19,27 +19,32 @@ const (
 )
 
 type CallRecord struct {
-	SessionID         string     `json:"sessionId"`
-	SessionName       string     `json:"sessionName,omitempty"`
-	SessionPhone      string     `json:"sessionPhone,omitempty"`
-	SessionPictureURL string     `json:"sessionPictureUrl,omitempty"`
-	CallID            string     `json:"callId"`
-	UserID            string     `json:"userId,omitempty"`
-	Owner             *string    `json:"owner"`
-	Direction         string     `json:"direction"`
-	Peer              string     `json:"peer"`
-	Name              string     `json:"name,omitempty"`
-	PictureURL        string     `json:"pictureUrl,omitempty"`
-	StartedAt         int64      `json:"startedAt"`
-	ConnectedAt       *int64     `json:"connectedAt,omitempty"`
-	Status            CallStatus `json:"status"`
-	EndedAt           *int64     `json:"endedAt,omitempty"`
-	EndReason         string     `json:"endReason,omitempty"`
+	SessionID         string     `gorm:"column:session_id;index;not null" json:"sessionId"`
+	SessionName       string     `gorm:"column:session_name;default:''" json:"sessionName,omitempty"`
+	SessionPhone      string     `gorm:"column:session_phone;default:''" json:"sessionPhone,omitempty"`
+	SessionPictureURL string     `gorm:"column:session_picture_url;default:''" json:"sessionPictureUrl,omitempty"`
+	CallID            string     `gorm:"column:id;primaryKey" json:"callId"`
+	UserID            string     `gorm:"column:user_id;index;default:''" json:"userId,omitempty"`
+	Owner             *string    `gorm:"column:owner;index" json:"owner"`
+	Direction         string     `gorm:"column:direction;not null" json:"direction"`
+	Peer              string     `gorm:"column:peer;not null" json:"peer"`
+	Name              string     `gorm:"column:peer_name;default:''" json:"name,omitempty"`
+	PictureURL        string     `gorm:"column:picture_url;default:''" json:"pictureUrl,omitempty"`
+	StartedAt         int64      `gorm:"column:started_at;index;not null" json:"startedAt"`
+	ConnectedAt       *int64     `gorm:"column:connected_at" json:"connectedAt,omitempty"`
+	Status            CallStatus `gorm:"column:status;not null" json:"status"`
+	EndedAt           *int64     `gorm:"column:ended_at" json:"endedAt,omitempty"`
+	EndReason         string     `gorm:"column:end_reason;default:''" json:"endReason,omitempty"`
+	DurationSec       int        `gorm:"column:duration_seconds;default:0" json:"durationSeconds,omitempty"`
 
-	RecordingPath       string `json:"recordingPath,omitempty"`
-	TranscriptJSON      string `json:"transcriptJson,omitempty"`
-	TranscriptSummary   string `json:"transcriptSummary,omitempty"`
-	TranscriptionStatus string `json:"transcriptionStatus,omitempty"`
+	RecordingPath       string `gorm:"column:recording_path;default:''" json:"recordingPath,omitempty"`
+	TranscriptJSON      string `gorm:"column:transcript_json;type:text;default:''" json:"transcriptJson,omitempty"`
+	TranscriptSummary   string `gorm:"column:transcript_summary;type:text;default:''" json:"transcriptSummary,omitempty"`
+	TranscriptionStatus string `gorm:"column:transcription_status;default:''" json:"transcriptionStatus,omitempty"`
+}
+
+func (CallRecord) TableName() string {
+	return "call_records"
 }
 
 type AuthSnapshot struct {

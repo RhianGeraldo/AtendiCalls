@@ -30,7 +30,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := newServer(ctx, *dbPath, *staticDir, *maxCalls, log)
+	dsn := *dbPath
+	if envDSN := os.Getenv("DATABASE_URL"); envDSN != "" {
+		dsn = envDSN
+	}
+
+	srv, err := newServer(ctx, dsn, *staticDir, *maxCalls, log)
 	if err != nil {
 		log.Error("startup failed", "err", err)
 		os.Exit(1)

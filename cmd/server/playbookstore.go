@@ -2,47 +2,37 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Playbook struct {
-	ID        string `json:"id"`
-	UserID    string `json:"userId,omitempty"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Category  string `json:"category"`
-	CreatedAt int64  `json:"createdAt"`
-	UpdatedAt int64  `json:"updatedAt"`
+	ID        string `gorm:"primaryKey" json:"id"`
+	UserID    string `gorm:"index" json:"userId,omitempty"`
+	Title     string `gorm:"index;not null" json:"title"`
+	Content   string `gorm:"type:text;not null" json:"content"`
+	Category  string `gorm:"default:''" json:"category"`
+	CreatedAt int64  `gorm:"not null" json:"createdAt"`
+	UpdatedAt int64  `gorm:"not null" json:"updatedAt"`
+}
+
+func (Playbook) TableName() string {
+	return "playbooks"
 }
 
 type playbookStore struct {
-	db *sql.DB
+	db *gorm.DB
 	mu sync.RWMutex
 }
 
-func newPlaybookStore(ctx context.Context, db *sql.DB) (*playbookStore, error) {
-	query := `
-	CREATE TABLE IF NOT EXISTS playbooks (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		content TEXT NOT NULL,
-		category TEXT DEFAULT '',
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	);
-	CREATE INDEX IF NOT EXISTS idx_playbooks_title ON playbooks(title);
-	`
-	_, err := db.ExecContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create playbooks table: %w", err)
+func newPlaybookStore(ctx context.Context, db *gorm.DB) (*playbookStore, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&Playbook{}); err != nil {
+		return nil, fmt.Errorf("auto migrate playbooks: %w", err)
 	}
-
-	_, _ = db.ExecContext(ctx, `ALTER TABLE playbooks ADD COLUMN user_id TEXT DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_playbooks_user_id ON playbooks(user_id)`)
 
 	ps := &playbookStore{db: db}
 	ps.seedDefaults(ctx)
@@ -51,8 +41,8 @@ func newPlaybookStore(ctx context.Context, db *sql.DB) (*playbookStore, error) {
 }
 
 func (ps *playbookStore) seedDefaults(ctx context.Context) {
-	var count int
-	_ = ps.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM playbooks").Scan(&count)
+	var count int64
+	_ = ps.db.WithContext(ctx).Model(&Playbook{}).Count(&count).Error
 	if count > 0 {
 		return
 	}
@@ -138,15 +128,11 @@ func (ps *playbookStore) Create(ctx context.Context, p Playbook) (*Playbook, err
 		p.CreatedAt = now
 	}
 	p.UpdatedAt = now
-
 	p.Title = strings.TrimSpace(p.Title)
 
-	query := `INSERT INTO playbooks (id, user_id, title, content, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	_, err := ps.db.ExecContext(ctx, query, p.ID, p.UserID, p.Title, p.Content, p.Category, p.CreatedAt, p.UpdatedAt)
-	if err != nil {
+	if err := ps.db.WithContext(ctx).Create(&p).Error; err != nil {
 		return nil, fmt.Errorf("failed to save playbook: %w", err)
 	}
-
 	return &p, nil
 }
 
@@ -155,9 +141,7 @@ func (ps *playbookStore) GetByID(ctx context.Context, id string) (*Playbook, err
 	defer ps.mu.RUnlock()
 
 	var p Playbook
-	query := `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks WHERE id = ?`
-	err := ps.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.UserID, &p.Title, &p.Content, &p.Category, &p.CreatedAt, &p.UpdatedAt)
-	if err != nil {
+	if err := ps.db.WithContext(ctx).Where("id = ?", id).First(&p).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -170,14 +154,18 @@ func (ps *playbookStore) Update(ctx context.Context, p Playbook) (*Playbook, err
 	now := time.Now().UnixMilli()
 	p.UpdatedAt = now
 
-	query := `UPDATE playbooks SET title = ?, content = ?, category = ?, updated_at = ? WHERE id = ?`
-	res, err := ps.db.ExecContext(ctx, query, p.Title, p.Content, p.Category, p.UpdatedAt, p.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update playbook: %w", err)
+	updates := map[string]any{
+		"title":      p.Title,
+		"content":    p.Content,
+		"category":   p.Category,
+		"updated_at": p.UpdatedAt,
 	}
 
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
+	res := ps.db.WithContext(ctx).Model(&Playbook{}).Where("id = ?", p.ID).Updates(updates)
+	if res.Error != nil {
+		return nil, fmt.Errorf("failed to update playbook: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
 		return nil, fmt.Errorf("playbook not found")
 	}
 
@@ -188,36 +176,20 @@ func (ps *playbookStore) Delete(ctx context.Context, id string) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	_, err := ps.db.ExecContext(ctx, "DELETE FROM playbooks WHERE id = ?", id)
-	return err
+	return ps.db.WithContext(ctx).Where("id = ?", id).Delete(&Playbook{}).Error
 }
 
 func (ps *playbookStore) List(ctx context.Context, userID string) ([]Playbook, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	var query string
-	var args []any
+	var list []Playbook
+	query := ps.db.WithContext(ctx).Order("title asc")
 	if userID != "" {
-		query = `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks WHERE user_id = ? OR user_id = '' ORDER BY title ASC`
-		args = append(args, userID)
-	} else {
-		query = `SELECT id, COALESCE(user_id, ''), title, content, category, created_at, updated_at FROM playbooks ORDER BY title ASC`
+		query = query.Where("user_id = ? OR user_id = ''", userID)
 	}
-
-	rows, err := ps.db.QueryContext(ctx, query, args...)
-	if err != nil {
+	if err := query.Find(&list).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	list := make([]Playbook, 0)
-	for rows.Next() {
-		var p Playbook
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Title, &p.Content, &p.Category, &p.CreatedAt, &p.UpdatedAt); err == nil {
-			list = append(list, p)
-		}
-	}
-
 	return list, nil
 }
