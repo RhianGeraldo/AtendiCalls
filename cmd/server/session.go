@@ -444,11 +444,20 @@ func (s *Session) acceptIncomingWithAgent(ctx context.Context, callID string, ag
 		keys.GoogleKey, _ = s.mgr.settings.Get(ctx, "google_api_key")
 		keys.GroqKey, _ = s.mgr.settings.Get(ctx, "groq_api_key")
 	}
+	if keys.OpenRouterKey == "" {
+		keys.OpenRouterKey = os.Getenv("OPENROUTER_API_KEY")
+	}
+	if keys.OpenAIKey == "" {
+		keys.OpenAIKey = os.Getenv("OPENAI_API_KEY")
+	}
 	if keys.GoogleKey == "" {
 		keys.GoogleKey = os.Getenv("GEMINI_API_KEY")
 		if keys.GoogleKey == "" {
 			keys.GoogleKey = os.Getenv("GOOGLE_API_KEY")
 		}
+	}
+	if keys.GroqKey == "" {
+		keys.GroqKey = os.Getenv("GROQ_API_KEY")
 	}
 
 	callbacks := voiceagent.Callbacks{
@@ -507,7 +516,11 @@ func (s *Session) acceptIncomingWithAgent(ctx context.Context, callID string, ag
 	ac.webhookURL = webhookURL
 	ac.mode = "ai"
 
-	s.mgr.broker.setOwner(callID, "IA: Donna Paulsen")
+	ownerName := "IA: " + agentCfg.Provider
+	if agentCfg.Model != "" {
+		ownerName = "IA: " + agentCfg.Model
+	}
+	s.mgr.broker.setOwner(callID, ownerName)
 
 	if err := ac.cm.AcceptCall(ctx, callID); err != nil {
 		agent.Close()

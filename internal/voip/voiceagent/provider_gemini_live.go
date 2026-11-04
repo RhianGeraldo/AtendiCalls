@@ -84,8 +84,8 @@ func normalizeGeminiVoice(v string) string {
 
 func normalizeGeminiModel(m string) string {
 	m = strings.TrimSpace(m)
-	if m == "" || strings.Contains(m, "gemini-2.0-flash-exp") || strings.Contains(m, "gemini-2.0-flash-001") {
-		return "models/gemini-2.5-flash-native-audio-latest"
+	if m == "" {
+		return "models/gemini-2.0-flash-exp"
 	}
 	if !strings.HasPrefix(m, "models/") {
 		m = "models/" + m
