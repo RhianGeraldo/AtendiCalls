@@ -71,7 +71,6 @@ export const PhoneDialerModal = () => {
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
   const micId = useDevices((s) => s.micId);
-  const outDeviceId = useDevices((s) => s.outId);
 
   const pairedSessions = sessions.filter((s) => s.paired);
   const currentSid = selectedSid || activeId || (pairedSessions[0]?.id ?? "");
@@ -195,30 +194,13 @@ export const PhoneDialerModal = () => {
   useEffect(() => {
     if (!conn) return;
     const offMic = attachMeter(conn.micStream, setMicDb);
-    let offPeer: (() => void) | null = null;
-
-    const checkStream = setInterval(() => {
-      if (conn.remoteStream && audioRef.current) {
-        audioRef.current.srcObject = conn.remoteStream;
-        audioRef.current.play().catch(() => {});
-        offPeer = attachMeter(conn.remoteStream, setPeerDb);
-        clearInterval(checkStream);
-      }
-    }, 200);
+    const offPeer = conn.remoteStream ? attachMeter(conn.remoteStream, setPeerDb) : null;
 
     return () => {
       offMic();
       offPeer?.();
-      clearInterval(checkStream);
     };
   }, [conn]);
-
-  // Sink ID for audio output
-  useEffect(() => {
-    const el = audioRef.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
-    if (!el || !outDeviceId || typeof el.setSinkId !== "function") return;
-    el.setSinkId(outDeviceId).catch(() => {});
-  }, [outDeviceId, conn]);
 
   const handleKeyPress = (key: string) => {
     setPhone((prev) => prev + key);
@@ -645,7 +627,7 @@ export const PhoneDialerModal = () => {
               </div>
             )}
 
-            <audio ref={audioRef} autoPlay />
+            <audio ref={audioRef} muted autoPlay className="hidden" />
           </div>
           );
         })()}

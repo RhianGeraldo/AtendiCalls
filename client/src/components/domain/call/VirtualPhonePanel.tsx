@@ -89,21 +89,11 @@ export const VirtualPhonePanel = ({
   useEffect(() => {
     if (!conn) return;
     const offMic = attachMeter(conn.micStream, setMicDb);
-    let offPeer: (() => void) | null = null;
-
-    const checkStream = setInterval(() => {
-      if (conn.remoteStream && audioRef.current) {
-        audioRef.current.srcObject = conn.remoteStream;
-        audioRef.current.play().catch(() => {});
-        offPeer = attachMeter(conn.remoteStream, setPeerDb);
-        clearInterval(checkStream);
-      }
-    }, 200);
+    const offPeer = conn.remoteStream ? attachMeter(conn.remoteStream, setPeerDb) : null;
 
     return () => {
       offMic();
       if (offPeer) offPeer();
-      clearInterval(checkStream);
     };
   }, [conn]);
 
@@ -376,7 +366,7 @@ export const VirtualPhonePanel = ({
             )}
           </div>
 
-          <audio ref={audioRef} autoPlay />
+          <audio ref={audioRef} muted autoPlay className="hidden" />
         </div>
 
         {/* Auto Dial Toggle Footer Bar */}

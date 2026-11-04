@@ -1,23 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { PhoneOff, PhoneIncoming, PhoneOutgoing, User as UserIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useCalls } from "@/stores/calls";
-import { useDevices } from "@/stores/devices";
 import { useSessions } from "@/stores/sessions";
 import { useEndCall } from "@/hooks/useEndCall";
 import { formatCallDuration } from "@/utils/format";
 import type { CallSummary } from "@/types/call";
 
 export const CallCard = ({ call }: { call: CallSummary }) => {
-  const conn = useCalls((s) => s.ownConnections.get(call.callId));
   const sessions = useSessions((s) => s.sessions);
-  const outDeviceId = useDevices((s) => s.outId);
   const endCall = useEndCall();
   const [, force] = useState(0);
-  const audioRef = useRef<HTMLAudioElement>(null);
 
   const isConnected = call.connectedAt || call.status === "connected";
   const isOutbound = call.direction === "outbound";
@@ -33,25 +28,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => {
-    if (!conn) return;
-    const wait = setInterval(() => {
-      if (conn.remoteStream && audioRef.current) {
-        audioRef.current.srcObject = conn.remoteStream;
-        audioRef.current.play().catch(() => {});
-        clearInterval(wait);
-      }
-    }, 200);
-    return () => {
-      clearInterval(wait);
-    };
-  }, [conn]);
 
-  useEffect(() => {
-    const el = audioRef.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
-    if (!el || !outDeviceId || typeof el.setSinkId !== "function") return;
-    el.setSinkId(outDeviceId).catch(() => {});
-  }, [outDeviceId, conn]);
 
   return (
     <Card className="border border-border/80 shadow-md bg-card overflow-hidden hover:border-emerald-500/30 transition-all">
@@ -148,8 +125,6 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
             </Badge>
           </div>
         </div>
-
-        <audio ref={audioRef} autoPlay className="hidden" />
       </CardContent>
     </Card>
   );
