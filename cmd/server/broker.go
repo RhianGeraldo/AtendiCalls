@@ -124,7 +124,7 @@ func (b *Broker) broadcastSessionScoped(sessionID string, ev any) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for s := range b.subs {
-		if s.role == string(RoleAdmin) || (ownerID != "" && s.userID == ownerID) || (s.role == "instance" && s.userID == sessionID) {
+		if s.role == string(RoleAdmin) || (ownerID != "" && s.userID == ownerID) {
 			select {
 			case s.ch <- data:
 			default:
@@ -405,13 +405,6 @@ func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID, user
 	var userCalls []CallRecord
 	if role == string(RoleAdmin) {
 		userCalls = callsCopy
-	} else if role == "instance" {
-		userCalls = make([]CallRecord, 0)
-		for _, c := range callsCopy {
-			if c.SessionID == userID {
-				userCalls = append(userCalls, c)
-			}
-		}
 	} else {
 		userCalls = make([]CallRecord, 0)
 		for _, c := range callsCopy {

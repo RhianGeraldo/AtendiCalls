@@ -203,17 +203,6 @@ func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if u != nil {
 		userID = u.ID
 		role = string(u.Role)
-	} else {
-		token := strings.TrimSpace(r.URL.Query().Get("token"))
-		if token == "" {
-			token = strings.TrimSpace(r.Header.Get("X-API-Key"))
-		}
-		if token != "" {
-			if sess, ok := s.sessions.GetByToken(token); ok && sess != nil {
-				userID = sess.id
-				role = "instance"
-			}
-		}
 	}
 	s.broker.serveSSE(w, r, clientID(r), userID, role)
 }

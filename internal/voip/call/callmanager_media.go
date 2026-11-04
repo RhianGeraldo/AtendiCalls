@@ -181,6 +181,11 @@ func (m *CallManager) onRelayData(data []byte) {
 	}
 	if hasAudio {
 		m.log.Debug("onRelayData: non-zero audio received!", "samples", len(pcm), "payloadLen", len(pkt.Payload), "firstByte", fmt.Sprintf("0x%02x", pkt.Payload[0]))
+	} else {
+		m.log.Debug("onRelayData: decoded audio is silence", "payloadLen", len(pkt.Payload), "firstByte", fmt.Sprintf("0x%02x", pkt.Payload[0]))
+		for i := range pcm {
+			pcm[i] = 0
+		}
 	}
 
 	if m.OnPeerAudio != nil {
