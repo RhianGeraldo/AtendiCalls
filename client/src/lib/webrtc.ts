@@ -49,6 +49,8 @@ export const openCall = async (
   const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
   dc.binaryType = "arraybuffer";
 
+  let isClosing = false;
+
   dc.onopen = () => {
     console.log("[AtendiCalls WebRTC] ✅ DataChannel 'pcm' aberto com sucesso!");
   };
@@ -58,7 +60,14 @@ export const openCall = async (
   };
 
   dc.onerror = (e) => {
-    console.error("[AtendiCalls WebRTC] ⚠️ Erro no DataChannel 'pcm':", e);
+    // Quando a chamada é encerrada pelo usuário (dc.close() ou pc.close()), a especificação WebRTC
+    // emite um evento onerror com 'OperationError: User-Initiated Abort'.
+    // Isso é o encerramento normal e esperado da ligação, não uma falha de conexão.
+    const err = (e as any)?.error;
+    if (isClosing || err?.name === "OperationError" || err?.message?.includes("User-Initiated Abort")) {
+      return;
+    }
+    console.warn("[AtendiCalls WebRTC] Aviso no DataChannel 'pcm':", e);
   };
 
   const AudioContextClass =
@@ -186,6 +195,7 @@ export const openCall = async (
     },
     isMuted: () => isMuted,
     close: () => {
+      isClosing = true;
       try {
         micStream.getTracks().forEach((t) => t.stop());
       } catch {}
