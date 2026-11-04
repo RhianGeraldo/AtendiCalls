@@ -59,4 +59,13 @@ func TestAIAgentStoreRoundtrip(t *testing.T) {
 	if got.Name != "Updated Name" {
 		t.Fatalf("expected 'Updated Name', got '%s'", got.Name)
 	}
+
+	found, err := store.FindAgentForSession(ctx, "any_session_id")
+	if err != nil {
+		t.Fatalf("find agent: %v", err)
+	}
+	if found == nil {
+		t.Fatalf("expected agent to be found for session, got nil")
+	}
+	t.Logf("Found agent: %s (%s)", found.Name, found.ID)
 }

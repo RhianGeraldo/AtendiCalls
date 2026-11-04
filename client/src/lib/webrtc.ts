@@ -25,7 +25,13 @@ export const openCall = async (
     audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
   });
 
-  const pc = new RTCPeerConnection({ iceServers: [] });
+  const pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+    ],
+  });
 
   const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
   dc.binaryType = "arraybuffer";
