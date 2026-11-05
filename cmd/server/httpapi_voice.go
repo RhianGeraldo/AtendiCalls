@@ -164,6 +164,10 @@ func (s *server) handleVoiceAPICreateCall(w http.ResponseWriter, r *http.Request
 			req.Agent.Voice = defVoice
 		}
 	}
+	if !req.Agent.EnableHangup && req.Agent.HangupDelaySec == 0 {
+		req.Agent.EnableHangup = true
+		req.Agent.HangupDelaySec = 1.5
+	}
 
 	callID, err := sess.startOutgoingWithAgent(context.Background(), peerJid, req.Agent, req.WebhookURL)
 	if err != nil {
