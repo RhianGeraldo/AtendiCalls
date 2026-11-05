@@ -86,6 +86,12 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 	m.rtpSession = media.NewWhatsAppOpusSession(m.selfSsrc)
 	m.peerSsrcs = []uint32{media.GenerateSecureSsrc(callID, peerJid.String(), 0)}
 	m.initCodec()
+	if signaling.IsIOSPlatform(info.PeerPlatform) {
+		if aware, ok := m.codec.(media.OpusAwareCodec); ok {
+			aware.SetPeerUsesOpus(true)
+		}
+		m.log.Info("caller platform is iOS / iPhone — enabled standard Opus codec", "platform", info.PeerPlatform)
+	}
 	m.mu.Unlock()
 
 	offerID := wanode.AttrString(node.Attrs, "id")
@@ -126,6 +132,15 @@ func (m *CallManager) HandleCallAccept(ctx context.Context, node *waBinary.Node,
 	info := signaling.ExtractNodeInfo(node)
 	if info == nil {
 		return
+	}
+
+	if signaling.IsIOSPlatform(info.PeerPlatform) {
+		m.mu.Lock()
+		if aware, ok := m.codec.(media.OpusAwareCodec); ok {
+			aware.SetPeerUsesOpus(true)
+		}
+		m.mu.Unlock()
+		m.log.Info("peer platform is iOS / iPhone — enabled standard Opus codec", "platform", info.PeerPlatform)
 	}
 
 	if signaling.NeedsDecryption(info.Tag) {
@@ -205,6 +220,15 @@ func (m *CallManager) HandleCallTransport(ctx context.Context, node *waBinary.No
 	info := signaling.ExtractNodeInfo(node)
 	if info == nil {
 		return
+	}
+
+	if signaling.IsIOSPlatform(info.PeerPlatform) {
+		m.mu.Lock()
+		if aware, ok := m.codec.(media.OpusAwareCodec); ok {
+			aware.SetPeerUsesOpus(true)
+		}
+		m.mu.Unlock()
+		m.log.Info("peer platform is iOS / iPhone — enabled standard Opus codec", "platform", info.PeerPlatform)
 	}
 	relays := signaling.ExtractRelayEndpoints(info.InnerNode)
 	m.log.Info("call transport received", "call_id", call.CallID,

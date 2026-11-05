@@ -42,6 +42,7 @@ const (
 const (
 	PayloadTypeWhatsAppOpus    = 120
 	PayloadTypeWhatsAppOpusAlt = 122
+	PayloadTypeWhatsAppOpus48k = 111
 )
 
 const (

@@ -124,7 +124,7 @@ func (m *CallManager) onRelayData(data []byte) {
 		return
 	}
 	pt := data[1] & 0x7f
-	if pt != core.PayloadTypeWhatsAppOpus && pt != core.PayloadTypeWhatsAppOpusAlt {
+	if pt != core.PayloadTypeWhatsAppOpus && pt != core.PayloadTypeWhatsAppOpusAlt && pt != core.PayloadTypeWhatsAppOpus48k {
 		if pt != 72 && pt != 74 && pt != 77 && pt != 78 && pt != 80 {
 			m.log.Debug("onRelayData: non-audio payload type", "pt", pt)
 		}
@@ -170,7 +170,9 @@ func (m *CallManager) onRelayData(data []byte) {
 		m.log.Warn("onRelayData: codec decode error", "err", err)
 		return
 	}
-	pcm = media.NormalizeFrame(pcm, codec.FrameSize())
+	if len(pcm) == 0 {
+		pcm = make([]float32, codec.FrameSize())
+	}
 
 	hasAudio := false
 	for _, s := range pcm {

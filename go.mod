@@ -1,6 +1,6 @@
 module atendicalls
 
-go 1.26.0
+go 1.27
 
 require (
 	github.com/coder/websocket v1.8.15
@@ -8,6 +8,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/pion/webrtc/v4 v4.2.15
 	github.com/rs/zerolog v1.35.1
+	github.com/tphakala/go-opus v1.3.0
 	go.mau.fi/whatsmeow v0.0.0-20261031222104-5d4657a5c29e
 	golang.org/x/crypto v0.58.0
 	google.golang.org/protobuf v1.36.12
@@ -52,6 +53,7 @@ require (
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v5 v5.0.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/tphakala/simd v1.14.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.64 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect

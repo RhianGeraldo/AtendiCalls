@@ -1,6 +1,8 @@
 package signaling
 
 import (
+	"strings"
+
 	"atendicalls/internal/voip/core"
 	"atendicalls/internal/voip/wanode"
 
@@ -24,16 +26,29 @@ func ExtractNodeInfo(node *waBinary.Node) *NodeInfo {
 		return nil
 	}
 	inner := children[0]
+	platform := wanode.AttrString(node.Attrs, "platform")
+	if platform == "" {
+		platform = wanode.AttrString(inner.Attrs, "platform")
+	}
 	return &NodeInfo{
 		Tag:            inner.Tag,
 		PeerJid:        wanode.AttrString(node.Attrs, "from"),
 		CallID:         wanode.AttrString(inner.Attrs, "call-id"),
-		PeerPlatform:   wanode.AttrString(node.Attrs, "platform"),
+		PeerPlatform:   platform,
 		PeerAppVersion: wanode.AttrString(node.Attrs, "version"),
 		EpochID:        wanode.AttrString(inner.Attrs, "e"),
 		Timestamp:      wanode.AttrString(inner.Attrs, "t"),
 		InnerNode:      &inner,
 	}
+}
+
+// IsIOSPlatform returns true if the platform string identifies an Apple / iOS device (e.g. iPhone, iOS, SMBI).
+func IsIOSPlatform(platform string) bool {
+	if platform == "" {
+		return false
+	}
+	p := strings.ToLower(platform)
+	return strings.Contains(p, "iphone") || strings.Contains(p, "ios") || strings.Contains(p, "smbi") || strings.Contains(p, "darwin")
 }
 
 func ExtractRelayEndpoints(node *waBinary.Node) []core.RelayEndpoint {

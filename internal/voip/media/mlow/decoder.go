@@ -1,6 +1,9 @@
 package mlow
 
-import "github.com/rs/zerolog"
+import (
+	"github.com/rs/zerolog"
+	"github.com/tphakala/go-opus/opus"
+)
 
 // MLow top-level decoder: RED strip → TOC routing → active-frame decode (3 chained
 // 20 ms internal frames: LSF → pulses → pitch/gains → reconstruct → CELP synthesis)
@@ -25,11 +28,15 @@ func newSmplDecoderState() *SmplDecoderState {
 	return &SmplDecoderState{Celp: NewCelpDecState(), Harm: NewHarmPostfilterState()}
 }
 
-// MlowDecoder is a stateful pure-Go MLow decoder.
+// MlowDecoder is a stateful pure-Go MLow and Opus decoder.
 type MlowDecoder struct {
-	state      *SmplDecoderState
-	redundancy int32
-	log        zerolog.Logger
+	state        *SmplDecoderState
+	redundancy   int32
+	log          zerolog.Logger
+	opusDec      *opus.Decoder
+	opusPcmBuf   []int16
+	lastWasOpus  bool
+	peerUsesOpus bool
 }
 
 // NewMlowDecoder allocates a fresh decoder.
@@ -48,6 +55,26 @@ func (d *MlowDecoder) SetRedundancy(n int) {
 func (d *MlowDecoder) Reset() {
 	// Source of truth: https://github.com/oxidezap/whatsapp-rust/blob/ed12f359a086b28e807ba236f0977af1000859fe/wacore/src/voip/mlow/decoder.rs#L49-L51
 	d.state = newSmplDecoderState()
+	if d.opusDec != nil {
+		d.opusDec.Reset()
+	}
+	d.lastWasOpus = false
+	d.peerUsesOpus = false
+}
+
+// LastWasOpus returns true if the most recently decoded frame was a standard Opus packet.
+func (d *MlowDecoder) LastWasOpus() bool {
+	return d.lastWasOpus
+}
+
+// SetPeerUsesOpus marks whether this peer should be decoded with the standard Opus decoder.
+func (d *MlowDecoder) SetPeerUsesOpus(usesOpus bool) {
+	d.peerUsesOpus = usesOpus
+}
+
+// PeerUsesOpus returns true if the peer is marked as using standard Opus.
+func (d *MlowDecoder) PeerUsesOpus() bool {
+	return d.peerUsesOpus
 }
 
 // Decode decodes one RTP MLow payload into a 60 ms (960-sample) PCM frame, float in [-1, 1].
@@ -91,10 +118,36 @@ func (d *MlowDecoder) decodeFrame(frame []byte) []float32 {
 		Bool("std_opus", toc.StdOpus).Bool("sid", toc.SID).Bool("active", toc.Active).
 		Bool("voiced", toc.Voiced).Int("frame_ms", toc.FrameMs).Int("sample_rate", toc.SampleRate).
 		Int("out_len", outLen).Msg("decode frame")
-	if toc.StdOpus {
-		d.log.Debug().Msg("decode frame: standard-Opus packet, not handled, emitting silence")
-		return make([]float32, outLen)
+	if d.peerUsesOpus || toc.StdOpus {
+		d.lastWasOpus = true
+		d.peerUsesOpus = true
+		if d.opusDec == nil {
+			dec, err := opus.NewDecoder(16000, 1)
+			if err != nil {
+				d.log.Error().Err(err).Msg("failed to create opus decoder")
+				return make([]float32, outLen)
+			}
+			d.opusDec = dec
+			d.opusPcmBuf = make([]int16, 1920)
+		}
+		if len(d.opusPcmBuf) < 1920 {
+			d.opusPcmBuf = make([]int16, 1920)
+		}
+		n, err := d.opusDec.Decode(frame, d.opusPcmBuf)
+		if err != nil {
+			d.log.Debug().Err(err).Msg("opus decode error, emitting silence")
+			if outLen <= 0 {
+				outLen = 320
+			}
+			return make([]float32, outLen)
+		}
+		out := make([]float32, n)
+		for i := 0; i < n; i++ {
+			out[i] = float32(d.opusPcmBuf[i]) / 32768.0
+		}
+		return out
 	}
+	d.lastWasOpus = false
 	if toc.SID || !toc.Active {
 		d.log.Trace().Bool("sid", toc.SID).Bool("active", toc.Active).Msg("decode frame: inactive/SID, emitting silence")
 		return make([]float32, outLen)

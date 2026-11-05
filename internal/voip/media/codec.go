@@ -12,6 +12,14 @@ type Codec interface {
 	Close()
 }
 
+// OpusAwareCodec is an optional extension for codecs that support adapting between
+// MLow and standard Opus depending on the peer platform / packet negotiation.
+type OpusAwareCodec interface {
+	Codec
+	SetPeerUsesOpus(usesOpus bool)
+	PeerUsesOpus() bool
+}
+
 type CodecOptions struct {
 	Bitrate    int
 	Complexity int
