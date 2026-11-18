@@ -205,20 +205,23 @@ func (a *GeminiLiveAgent) Start(ctx context.Context) error {
 	}
 
 	var toolDirectives []string
-	if a.cfg.EnableHangup {
-		toolDirectives = append(toolDirectives,
-			"- FERRAMENTA 'encerrar_chamada': Quando o interlocutor se despedir (dizer 'tchau', 'obrigado', 'era só isso', 'pode desligar', 'até mais') ou a conversa for concluída, despeça-se brevemente e chame IMEDIATAMENTE a ferramenta 'encerrar_chamada' para desligar a ligação.",
-		)
-	}
 	if a.cfg.EnableWhatsAppMessage {
-		directive := "- FERRAMENTAS DE WHATSAPP: Você pode enviar mensagens pelo WhatsApp para a pessoa com quem está falando.\n" +
+		directive := "- FERRAMENTAS DE WHATSAPP (EXECUTE ANTES DE QUALQUER ENCERRAMENTO):\n" +
 			"  * 'enviar_mensagem_whatsapp': Para enviar mensagens de texto comuns, resumos ou lembretes.\n" +
-			"  * 'enviar_botoes_whatsapp': Para enviar mensagens interativas com botões clicáveis (ex: resposta rápida como 'Confirmar'/'Remarcar', links para páginas web/pagamento, chave Pix para cópia imediata, ou botão de ligar). Use sempre que fizer sentido oferecer opções práticas de clique ao interlocutor.\n" +
-			"Se você disser ou combinar que vai enviar algo por WhatsApp, acione a ferramenta correspondente e avise o cliente na ligação que já enviou."
+			"  * 'enviar_botoes_whatsapp': Para enviar mensagens interativas com botões clicáveis (ex: resposta rápida como 'Confirmar'/'Remarcar', links para páginas web/pagamento, chave Pix para cópia imediata, ou botão de ligar).\n" +
+			"  * REGRA CRÍTICA: Se você disser ou combinar que vai enviar algo por WhatsApp (ou direcionar para a equipe), você DEVE OBRIGATORIAMENTE acionar a ferramenta de WhatsApp PRIMEIRO no mesmo momento em que falar isso. NUNCA desligue a ligação sem antes disparar a mensagem prometida!"
 		if a.cfg.WhatsAppMessageRules != "" {
 			directive += fmt.Sprintf(" Regras específicas para mensagens no WhatsApp: %s", a.cfg.WhatsAppMessageRules)
 		}
 		toolDirectives = append(toolDirectives, directive)
+	}
+	if a.cfg.EnableHangup {
+		toolDirectives = append(toolDirectives,
+			"- FERRAMENTA 'encerrar_chamada' (REGRA ESTRITA DE PRECEDÊNCIA):\n"+
+				"  * Use SOMENTE quando a ligação estiver 100% finalizada e o interlocutor se despedir explicitamente (dizer 'tchau', 'obrigado, era só isso', 'pode desligar', 'até logo').\n"+
+				"  * PROIBIDO chamar 'encerrar_chamada' antes de executar ferramentas de WhatsApp prometidas.\n"+
+				"  * PROIBIDO desligar no meio de uma resposta ou enquanto o cliente ainda estiver interagindo ou demonstrando interesse.",
+		)
 	}
 
 	if len(toolDirectives) > 0 {
